@@ -1,18 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Flex, HStack, Icon, IconButton, Input, Text } from '@chakra-ui/react';
-import { LuPlay, LuPause, LuSkipBack, LuRepeat, LuChevronDown, LuChevronRight, LuClock, LuZap } from 'react-icons/lu';
+import {
+  LuPlay,
+  LuPause,
+  LuSkipBack,
+  LuRepeat,
+  LuChevronDown,
+  LuChevronRight,
+  LuClock,
+  LuZap,
+  LuZoomIn,
+  LuZoomOut,
+  LuMagnet,
+} from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
+import { usePhase } from '../../store/featureStore';
 import { sortKeyframes } from '../../lib/engine';
-import { buildLayerRows, elementsInGroupOrder } from '../../lib/layers';
+import { buildLayerRows, elementsInGroupOrder, sortElementsForLayerList, buildSiblingOrder } from '../../lib/layers';
 import { layerListSelectableIds } from '../../lib/selection';
 import { PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
 import { formatTime } from '../../lib/format';
 import type { AnimatableProperty, Clip, Track } from '../../types';
 
-const PPMS = 0.12;
+const BASE_PPMS = 0.12;
 const LABEL_W = 160;
 const TRACK_H = 30;
 const RULER_H = 26;
+const SNAP_MS = 100;
 
 type Entry =
   | { kind: 'clip'; clip: Clip; property: AnimatableProperty; start: number; end: number; label: string }
@@ -26,14 +40,14 @@ interface Row {
   entries: Entry[];
 }
 
-function Ruler({ duration }: { duration: number }) {
+function Ruler({ duration, ppms }: { duration: number; ppms: number }) {
   const marks: { t: number; major: boolean }[] = [];
   for (let t = 0; t <= duration; t += 250) marks.push({ t, major: t % 1000 === 0 });
   return (
     <Box position="relative" height={`${RULER_H}px`} ml={`${LABEL_W}px`} borderBottomWidth="1px" borderColor="gray.200" bg="gray.50">
-      <Box position="absolute" top={0} height="100%" style={{ width: duration * PPMS }}>
+      <Box position="absolute" top={0} height="100%" style={{ width: duration * ppms }}>
         {marks.map(({ t, major }) => (
-          <Box key={t} position="absolute" top={0} style={{ left: t * PPMS }}>
+          <Box key={t} position="absolute" top={0} style={{ left: t * ppms }}>
             <Box width="1px" height={major ? '10px' : '6px'} bg="gray.300" />
             {major && (
               <Text position="absolute" top="11px" left="2px" fontSize="9px" color="gray.500" whiteSpace="nowrap">
@@ -66,6 +80,13 @@ export default function Timeline() {
   const setFps = useEditorStore((s) => s.setFps);
   const updateClipTiming = useEditorStore((s) => s.updateClipTiming);
   const updateKeyframe = useEditorStore((s) => s.updateKeyframe);
+
+  const canGroup = usePhase('p2');
+  const canCustom = usePhase('p3c');
+  const [zoom, setZoom] = useState(1);
+  const [snap, setSnap] = useState(false);
+  const PPMS = BASE_PPMS * zoom;
+  const snapMs = useCallback((ms: number) => (snap ? Math.round(ms / SNAP_MS) * SNAP_MS : Math.round(ms)), [snap]);
 
   const { durationMs, fps, tracks, clips } = animation;
   const containerRef = useRef<HTMLDivElement>(null);
@@ -138,6 +159,16 @@ export default function Timeline() {
   );
 
   const rows: Row[] = useMemo(() => {
+    if (!canGroup) {
+      const order = buildSiblingOrder(elements, groups);
+      return sortElementsForLayerList(elements, order).map((el) => ({
+        id: el.id,
+        name: el.name,
+        isGroup: false,
+        depth: 0,
+        entries: entriesFor(el.id),
+      }));
+    }
     const byId = new Map(elements.map((e) => [e.id, e]));
     const result: Row[] = [];
     Object.values(groups)
@@ -156,7 +187,7 @@ export default function Timeline() {
         result.push({ id: el.id, name: el.name, isGroup: false, depth: 0, entries: entriesFor(el.id) });
       });
     return result;
-  }, [elements, groups, entriesFor]);
+  }, [elements, groups, entriesFor, canGroup]);
 
   const selectableIds = useMemo(
     () => layerListSelectableIds(buildLayerRows(elements, groups)),
@@ -183,7 +214,7 @@ export default function Timeline() {
       const x = clientX - rect.left + el.scrollLeft - LABEL_W;
       setCurrentTime(Math.max(0, Math.min(x / PPMS, durationMs)));
     },
-    [durationMs, setCurrentTime],
+    [durationMs, setCurrentTime, PPMS],
   );
 
   const dragClip = (clipId: string, origStart: number) => (e: React.PointerEvent) => {
@@ -191,7 +222,7 @@ export default function Timeline() {
     const startX = e.clientX;
     const onMove = (ev: PointerEvent) => {
       const delta = (ev.clientX - startX) / PPMS;
-      updateClipTiming(clipId, { startTime: Math.max(0, Math.min(origStart + delta, durationMs)) });
+      updateClipTiming(clipId, { startTime: Math.max(0, Math.min(snapMs(origStart + delta), durationMs)) });
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -206,7 +237,7 @@ export default function Timeline() {
     const startX = e.clientX;
     const onMove = (ev: PointerEvent) => {
       const delta = (ev.clientX - startX) / PPMS;
-      updateKeyframe(trackId, keyframeId, { tMs: Math.max(0, Math.min(Math.round(origT + delta), durationMs)) });
+      updateKeyframe(trackId, keyframeId, { tMs: Math.max(0, Math.min(snapMs(origT + delta), durationMs)) });
     };
     const onUp = () => {
       window.removeEventListener('pointermove', onMove);
@@ -272,13 +303,43 @@ export default function Timeline() {
             fps
           </Text>
         </HStack>
+        {canCustom && (
+          <HStack spacing={1} pl={1}>
+            <IconButton
+              aria-label="Zoom out"
+              size="xs"
+              variant="ghost"
+              icon={<Icon as={LuZoomOut} />}
+              onClick={() => setZoom((z) => Math.max(0.5, +(z - 0.5).toFixed(2)))}
+            />
+            <Text fontSize="10px" color="gray.400" minW="30px" textAlign="center">
+              {Math.round(zoom * 100)}%
+            </Text>
+            <IconButton
+              aria-label="Zoom in"
+              size="xs"
+              variant="ghost"
+              icon={<Icon as={LuZoomIn} />}
+              onClick={() => setZoom((z) => Math.min(4, +(z + 0.5).toFixed(2)))}
+            />
+            <IconButton
+              aria-label="Toggle snapping"
+              size="xs"
+              variant="ghost"
+              color={snap ? 'mcBlue.500' : 'gray.400'}
+              icon={<Icon as={LuMagnet} />}
+              title={snap ? 'Snap to 100ms: on' : 'Snap to 100ms: off'}
+              onClick={() => setSnap((v) => !v)}
+            />
+          </HStack>
+        )}
       </HStack>
 
       {/* scrollable timeline */}
       <Box ref={containerRef} flex={1} overflow="auto" position="relative">
         <Box style={{ width: LABEL_W + durationMs * PPMS, minWidth: '100%' }}>
           <Box position="sticky" top={0} zIndex={3} cursor="pointer" onPointerDown={(e) => seek(e.clientX)}>
-            <Ruler duration={durationMs} />
+            <Ruler duration={durationMs} ppms={PPMS} />
           </Box>
 
           {/* playhead */}

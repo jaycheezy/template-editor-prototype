@@ -4,6 +4,7 @@ import { FaShapes } from 'react-icons/fa';
 import { PiBoundingBox } from 'react-icons/pi';
 import type { IconType } from 'react-icons';
 import { useEditorStore } from '../../store/editorStore';
+import { usePhase } from '../../store/featureStore';
 import PropertiesPanel from './PropertiesPanel';
 import AnimatePanel from './AnimatePanel';
 
@@ -11,8 +12,10 @@ export default function RightSidebar() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
   const selectedIds = useEditorStore((s) => s.selectedIds);
-  const rightMode = useEditorStore((s) => s.rightMode);
+  const rightModeRaw = useEditorStore((s) => s.rightMode);
   const setRightMode = useEditorStore((s) => s.setRightMode);
+  const canAnimate = usePhase('p3a');
+  const rightMode = canAnimate ? rightModeRaw : 'properties';
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null;
   const el = elements.find((e) => e.id === primaryId);
@@ -52,26 +55,28 @@ export default function RightSidebar() {
               {name}
             </Text>
           </HStack>
-          <HStack px={6} spacing={2} pb={2}>
-            <Button
-              size="sm"
-              leftIcon={<Icon as={LuSlidersHorizontal} />}
-              variant={rightMode === 'properties' ? 'solid' : 'ghost'}
-              colorScheme="mcBlue"
-              onClick={() => setRightMode('properties')}
-            >
-              Properties
-            </Button>
-            <Button
-              size="sm"
-              leftIcon={<Icon as={LuSparkles} />}
-              variant={rightMode === 'animate' ? 'solid' : 'ghost'}
-              colorScheme="mcBlue"
-              onClick={() => setRightMode('animate')}
-            >
-              Animate
-            </Button>
-          </HStack>
+          {canAnimate && (
+            <HStack px={6} spacing={2} pb={2}>
+              <Button
+                size="sm"
+                leftIcon={<Icon as={LuSlidersHorizontal} />}
+                variant={rightMode === 'properties' ? 'solid' : 'ghost'}
+                colorScheme="mcBlue"
+                onClick={() => setRightMode('properties')}
+              >
+                Properties
+              </Button>
+              <Button
+                size="sm"
+                leftIcon={<Icon as={LuSparkles} />}
+                variant={rightMode === 'animate' ? 'solid' : 'ghost'}
+                colorScheme="mcBlue"
+                onClick={() => setRightMode('animate')}
+              >
+                Animate
+              </Button>
+            </HStack>
+          )}
           <Box borderTopWidth="1px" borderColor="gray.100" flex={1} overflowY="auto">
             {rightMode === 'properties' ? <PropertiesPanel /> : <AnimatePanel />}
           </Box>

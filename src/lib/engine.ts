@@ -142,6 +142,39 @@ export function resolveGroupChain(
 export interface RenderedElement {
   element: AdElement;
   transform: ResolvedTransform;
+  hidden: boolean;
+}
+
+/** Whether an element is hidden by its own flag or any ancestor group. */
+export function isEffectivelyHidden(
+  element: AdElement,
+  groups: Record<string, Group>,
+): boolean {
+  if (element.hidden) return true;
+  let currentId = element.parentId;
+  const seen = new Set<string>();
+  while (currentId && groups[currentId] && !seen.has(currentId)) {
+    seen.add(currentId);
+    if (groups[currentId].hidden) return true;
+    currentId = groups[currentId].parentId;
+  }
+  return false;
+}
+
+/** Whether an element is locked by its own flag or any ancestor group. */
+export function isEffectivelyLocked(
+  element: AdElement,
+  groups: Record<string, Group>,
+): boolean {
+  if (element.locked) return true;
+  let currentId = element.parentId;
+  const seen = new Set<string>();
+  while (currentId && groups[currentId] && !seen.has(currentId)) {
+    seen.add(currentId);
+    if (groups[currentId].locked) return true;
+    currentId = groups[currentId].parentId;
+  }
+  return false;
 }
 
 /** Compute final transforms for every element at time t. */
@@ -163,7 +196,7 @@ export function renderScene(
       scaleY: own.scaleY * groupChain.scaleY,
       opacity: own.opacity * groupChain.opacity,
     };
-    return { element, transform };
+    return { element, transform, hidden: isEffectivelyHidden(element, groups) };
   });
 }
 

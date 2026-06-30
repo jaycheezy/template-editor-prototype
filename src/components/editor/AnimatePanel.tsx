@@ -10,22 +10,20 @@ import {
   Input,
   Select,
   SimpleGrid,
+  Slider,
+  SliderFilledTrack,
+  SliderThumb,
+  SliderTrack,
   Text,
   VStack,
 } from '@chakra-ui/react';
-import { LuPlus, LuSparkles, LuTrash2, LuDiamond } from 'react-icons/lu';
+import { LuCopy, LuPlus, LuSparkles, LuTrash2, LuDiamond } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
+import { usePhase } from '../../store/featureStore';
 import { EASING_OPTIONS } from '../../lib/easing';
-import { effectsByKind, PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
+import { effectsByKindForPhases, getEffect, PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
 import type { AnimatableProperty, Clip, ClipKind, EasingFunction, Track } from '../../types';
 import { sortKeyframes } from '../../lib/engine';
-
-const TABS: { id: ClipKind; label: string }[] = [
-  { id: 'IN', label: 'IN' },
-  { id: 'DURING', label: 'DURING' },
-  { id: 'OUT', label: 'OUT' },
-  { id: 'CUSTOM', label: 'CUSTOM' },
-];
 
 const PROPERTY_GROUPS: { label: string; properties: AnimatableProperty[] }[] = [
   { label: 'Move', properties: ['x', 'y'] },
@@ -39,13 +37,18 @@ function clipPrimaryProperty(clip: Clip, tracks: Record<string, Track>): Animata
   return first?.property ?? 'opacity';
 }
 
-function AppliedClipCard({ clip }: { clip: Clip }) {
+function AppliedClipCard({ clip, canCustom, canExtended }: { clip: Clip; canCustom: boolean; canExtended: boolean }) {
   const tracks = useEditorStore((s) => s.animation.tracks);
   const durationMs = useEditorStore((s) => s.animation.durationMs);
   const updateClipTiming = useEditorStore((s) => s.updateClipTiming);
+  const updateClipIntensity = useEditorStore((s) => s.updateClipIntensity);
   const convertClipToCustom = useEditorStore((s) => s.convertClipToCustom);
+  const duplicateClip = useEditorStore((s) => s.duplicateClip);
   const deleteClip = useEditorStore((s) => s.deleteClip);
   const color = PROPERTY_COLORS[clipPrimaryProperty(clip, tracks)];
+
+  const effect = clip.effectId ? getEffect(clip.effectId) : undefined;
+  const supportsIntensity = effect != null && effect.category !== 'fade';
 
   return (
     <Box borderWidth="1px" borderLeftWidth="3px" borderLeftColor={color} borderColor="gray.200" borderRadius="8px" p={3} bg="gray.50">
@@ -56,15 +59,28 @@ function AppliedClipCard({ clip }: { clip: Clip }) {
             {clip.label ?? clip.effectId}
           </Text>
         </HStack>
-        <IconButton
-          aria-label="Delete effect"
-          size="xs"
-          variant="ghost"
-          color="gray.400"
-          _hover={{ color: 'red.500' }}
-          icon={<Icon as={LuTrash2} />}
-          onClick={() => deleteClip(clip.id)}
-        />
+        <HStack spacing={0}>
+          {canExtended && (
+            <IconButton
+              aria-label="Duplicate effect"
+              size="xs"
+              variant="ghost"
+              color="gray.400"
+              _hover={{ color: 'mcBlue.500' }}
+              icon={<Icon as={LuCopy} />}
+              onClick={() => duplicateClip(clip.id)}
+            />
+          )}
+          <IconButton
+            aria-label="Delete effect"
+            size="xs"
+            variant="ghost"
+            color="gray.400"
+            _hover={{ color: 'red.500' }}
+            icon={<Icon as={LuTrash2} />}
+            onClick={() => deleteClip(clip.id)}
+          />
+        </HStack>
       </HStack>
       <HStack spacing={3} mb={3}>
         <Box flex={1}>
@@ -112,16 +128,49 @@ function AppliedClipCard({ clip }: { clip: Clip }) {
           ))}
         </Select>
       </Box>
-      <Button size="xs" variant="outline" width="100%" onClick={() => convertClipToCustom(clip.id)}>
-        Convert to Custom
-      </Button>
+      {canExtended && supportsIntensity && (
+        <Box mb={3}>
+          <HStack justify="space-between" mb={1}>
+            <Text fontSize="11px" color="gray.500">
+              Intensity
+            </Text>
+            <Text fontSize="11px" color="gray.500">
+              {Math.round((clip.intensity ?? 1) * 100)}%
+            </Text>
+          </HStack>
+          <Slider
+            min={0.25}
+            max={2}
+            step={0.05}
+            value={clip.intensity ?? 1}
+            onChange={(v) => updateClipIntensity(clip.id, v)}
+          >
+            <SliderTrack>
+              <SliderFilledTrack />
+            </SliderTrack>
+            <SliderThumb />
+          </Slider>
+        </Box>
+      )}
+      {canCustom && (
+        <Button size="xs" variant="outline" width="100%" onClick={() => convertClipToCustom(clip.id)}>
+          Convert to Custom
+        </Button>
+      )}
     </Box>
   );
 }
 
-function EffectGallery({ kind, targetId }: { kind: ClipKind; targetId: string }) {
-  const applyEffect = useEditorStore((s) => s.applyEffect);
-  const effects = effectsByKind(kind);
+function EffectGallery({
+  kind,
+  p3b,
+  onApply,
+}: {
+  kind: ClipKind;
+  p3b: boolean;
+  onApply: (effectId: string) => void;
+}) {
+  const effects = effectsByKindForPhases(kind, p3b);
   const categories = useMemo(() => Array.from(new Set(effects.map((e) => e.category))), [effects]);
 
   return (
@@ -143,10 +192,14 @@ function EffectGallery({ kind, targetId }: { kind: ClipKind; targetId: string })
                   borderColor="gray.200"
                   flexDir="column"
                   gap={1}
-                  onClick={() => applyEffect(targetId, e.id)}
+                  onClick={() => onApply(e.id)}
                   _hover={{ borderColor: 'mcBlue.400', bg: 'mcBlue.50' }}
                 >
-                  <Box boxSize="14px" borderRadius="3px" bg={PROPERTY_COLORS[e.build({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1 })[0].property]} />
+                  <Box
+                    boxSize="14px"
+                    borderRadius="3px"
+                    bg={PROPERTY_COLORS[e.build({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1 })[0].property]}
+                  />
                   <Text fontSize="11px" fontWeight={500}>
                     {e.label}
                   </Text>
@@ -163,12 +216,13 @@ function KeyframeRow({ track, keyframeId }: { track: Track; keyframeId: string }
   const durationMs = useEditorStore((s) => s.animation.durationMs);
   const updateKeyframe = useEditorStore((s) => s.updateKeyframe);
   const deleteKeyframe = useEditorStore((s) => s.deleteKeyframe);
+  const duplicateKeyframe = useEditorStore((s) => s.duplicateKeyframe);
   const kf = track.keyframes.find((k) => k.id === keyframeId)!;
   return (
     <HStack spacing={1.5}>
       <Input
         size="xs"
-        width="60px"
+        width="56px"
         type="number"
         value={Math.round(kf.tMs)}
         onChange={(e) => updateKeyframe(track.id, kf.id, { tMs: Math.max(0, Math.min(Number(e.target.value), durationMs)) })}
@@ -176,7 +230,7 @@ function KeyframeRow({ track, keyframeId }: { track: Track; keyframeId: string }
       />
       <Input
         size="xs"
-        width="56px"
+        width="52px"
         type="number"
         step={0.1}
         value={kf.value}
@@ -195,6 +249,15 @@ function KeyframeRow({ track, keyframeId }: { track: Track; keyframeId: string }
           </option>
         ))}
       </Select>
+      <IconButton
+        aria-label="Duplicate keyframe"
+        size="xs"
+        variant="ghost"
+        color="gray.400"
+        _hover={{ color: 'mcBlue.500' }}
+        icon={<Icon as={LuCopy} />}
+        onClick={() => duplicateKeyframe(track.id, kf.id)}
+      />
       <IconButton
         aria-label="Delete keyframe"
         size="xs"
@@ -215,6 +278,7 @@ function CustomTab({ targetId }: { targetId: string }) {
   const addCustomTrack = useEditorStore((s) => s.addCustomTrack);
   const addKeyframe = useEditorStore((s) => s.addKeyframe);
   const deleteTrack = useEditorStore((s) => s.deleteTrack);
+  const shiftTrack = useEditorStore((s) => s.shiftTrack);
 
   const targetTracks = Object.values(tracks).filter(
     (t) => t.targetId === targetId && (!t.clipId || clips[t.clipId]?.kind === 'CUSTOM'),
@@ -248,24 +312,48 @@ function CustomTab({ targetId }: { targetId: string }) {
                   </HStack>
                   {propTracks.map((track) => (
                     <Box key={track.id} px={2.5} pb={2.5} bg="gray.50">
-                      <HStack justify="flex-end" py={1}>
-                        <IconButton
-                          aria-label="Add keyframe at playhead"
-                          size="xs"
-                          variant="ghost"
-                          icon={<Icon as={LuDiamond} />}
-                          title="Add keyframe at playhead"
-                          onClick={() => addKeyframe(track.id, currentTime, sortKeyframes(track.keyframes).slice(-1)[0]?.value ?? 0)}
-                        />
-                        <IconButton
-                          aria-label="Delete track"
-                          size="xs"
-                          variant="ghost"
-                          color="gray.400"
-                          _hover={{ color: 'red.500' }}
-                          icon={<Icon as={LuTrash2} />}
-                          onClick={() => deleteTrack(track.id)}
-                        />
+                      <HStack justify="space-between" py={1}>
+                        <HStack spacing={0}>
+                          <IconButton
+                            aria-label="Shift track left"
+                            size="xs"
+                            variant="ghost"
+                            fontSize="11px"
+                            onClick={() => shiftTrack(track.id, -100)}
+                          >
+                            −100
+                          </IconButton>
+                          <IconButton
+                            aria-label="Shift track right"
+                            size="xs"
+                            variant="ghost"
+                            fontSize="11px"
+                            onClick={() => shiftTrack(track.id, 100)}
+                          >
+                            +100
+                          </IconButton>
+                        </HStack>
+                        <HStack spacing={0}>
+                          <IconButton
+                            aria-label="Add keyframe at playhead"
+                            size="xs"
+                            variant="ghost"
+                            icon={<Icon as={LuDiamond} />}
+                            title="Add keyframe at playhead"
+                            onClick={() =>
+                              addKeyframe(track.id, currentTime, sortKeyframes(track.keyframes).slice(-1)[0]?.value ?? 0)
+                            }
+                          />
+                          <IconButton
+                            aria-label="Delete track"
+                            size="xs"
+                            variant="ghost"
+                            color="gray.400"
+                            _hover={{ color: 'red.500' }}
+                            icon={<Icon as={LuTrash2} />}
+                            onClick={() => deleteTrack(track.id)}
+                          />
+                        </HStack>
                       </HStack>
                       <VStack align="stretch" spacing={1}>
                         {sortKeyframes(track.keyframes).map((kf) => (
@@ -287,8 +375,25 @@ function CustomTab({ targetId }: { targetId: string }) {
 export default function AnimatePanel() {
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const clips = useEditorStore((s) => s.animation.clips);
-  const [tab, setTab] = useState<ClipKind>('IN');
+  const applyEffect = useEditorStore((s) => s.applyEffect);
+  const applyEffectToSelection = useEditorStore((s) => s.applyEffectToSelection);
+  const p3b = usePhase('p3b');
+  const p3c = usePhase('p3c');
 
+  const tabs = useMemo<{ id: ClipKind; label: string }[]>(() => {
+    const out: { id: ClipKind; label: string }[] = [
+      { id: 'IN', label: 'IN' },
+      { id: 'OUT', label: 'OUT' },
+    ];
+    if (p3b) out.splice(1, 0, { id: 'DURING', label: 'DURING' });
+    if (p3c) out.push({ id: 'CUSTOM', label: 'CUSTOM' });
+    return out;
+  }, [p3b, p3c]);
+
+  const [tabRaw, setTab] = useState<ClipKind>('IN');
+  const tab = tabs.some((t) => t.id === tabRaw) ? tabRaw : 'IN';
+
+  const multi = selectedIds.length > 1;
   const primaryId = selectedIds[selectedIds.length - 1] ?? null;
 
   if (selectedIds.length === 0) {
@@ -302,27 +407,19 @@ export default function AnimatePanel() {
     );
   }
 
-  if (selectedIds.length > 1) {
-    return (
-      <Flex direction="column" align="center" justify="center" py={16} px={6} color="gray.400">
-        <Icon as={LuSparkles} boxSize={6} mb={3} />
-        <Text fontSize="13px" textAlign="center" lineHeight="1.5">
-          {selectedIds.length} items selected. Select a single layer or group to apply animation effects.
-        </Text>
-      </Flex>
-    );
-  }
+  if (!primaryId) return null;
 
-  if (!primaryId) {
-    return null;
-  }
+  const onApply = (effectId: string) => {
+    if (multi) applyEffectToSelection(effectId);
+    else applyEffect(primaryId, effectId);
+  };
 
   const appliedClips = Object.values(clips).filter((c) => c.targetId === primaryId && c.kind === tab);
 
   return (
     <Flex direction="column" height="100%">
-      <Grid templateColumns="repeat(4, 1fr)" borderBottomWidth="1px" borderColor="gray.200" px={4}>
-        {TABS.map((t) => (
+      <Grid templateColumns={`repeat(${tabs.length}, 1fr)`} borderBottomWidth="1px" borderColor="gray.200" px={4}>
+        {tabs.map((t) => (
           <Button
             key={t.id}
             variant="unstyled"
@@ -340,24 +437,32 @@ export default function AnimatePanel() {
         ))}
       </Grid>
 
+      {multi && tab !== 'CUSTOM' && (
+        <Box px={4} pt={3}>
+          <Text fontSize="12px" color="mcBlue.600" fontWeight={600}>
+            Applying to {selectedIds.length} selected layers/groups.
+          </Text>
+        </Box>
+      )}
+
       <Box flex={1} overflowY="auto" px={4} py={4}>
         {tab === 'CUSTOM' ? (
           <CustomTab targetId={primaryId} />
         ) : (
           <VStack align="stretch" spacing={4}>
-            {appliedClips.length > 0 && (
+            {!multi && appliedClips.length > 0 && (
               <Box>
                 <Text fontSize="11px" fontWeight={700} textTransform="uppercase" color="gray.500" mb={2}>
                   Applied
                 </Text>
                 <VStack align="stretch" spacing={2}>
                   {appliedClips.map((c) => (
-                    <AppliedClipCard key={c.id} clip={c} />
+                    <AppliedClipCard key={c.id} clip={c} canCustom={p3c} canExtended={p3b} />
                   ))}
                 </VStack>
               </Box>
             )}
-            <EffectGallery kind={tab} targetId={primaryId} />
+            <EffectGallery kind={tab} p3b={p3b} onApply={onApply} />
           </VStack>
         )}
       </Box>

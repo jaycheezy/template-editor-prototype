@@ -41,6 +41,8 @@ export interface AdElementBase {
   parentId: string | null;
   /** background SVG element is locked & non-groupable, per spec invariant. */
   locked?: boolean;
+  /** hidden from canvas + excluded from hit-testing (Phase 1 visibility control). */
+  hidden?: boolean;
 }
 
 export interface TextElement extends AdElementBase {
@@ -98,6 +100,9 @@ export interface Group {
   children: string[];
   transform: GroupTransform;
   collapsed?: boolean;
+  /** cascades to descendants (Phase 2). */
+  hidden?: boolean;
+  locked?: boolean;
 }
 
 export type EasingFunction =
@@ -139,6 +144,8 @@ export interface Clip {
   easing: EasingFunction;
   trackIds: string[];
   isModified?: boolean;
+  /** effect parameter (3b): scales distance/scale/angle/amplitude. 1 = default. */
+  intensity?: number;
 }
 
 export interface AnimationModel {

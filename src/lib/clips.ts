@@ -24,11 +24,12 @@ export function buildEffectClip(
   effect: EffectDef,
   startTime: number,
   trackIndexBase = 0,
+  intensity = 1,
 ): BuiltClip {
   const clipId = uid('clip');
   const easing = effect.defaultEasing;
   const duration = effect.defaultDuration;
-  const specs = effect.build(base);
+  const specs = effect.build(base, intensity);
 
   const tracks: Track[] = specs.map((spec, i) => {
     const keyframes: Keyframe[] = spec.keyframes.map((k) => ({
@@ -57,6 +58,7 @@ export function buildEffectClip(
     duration,
     easing,
     trackIds: tracks.map((t) => t.id),
+    intensity,
   };
 
   return { clip, tracks };

@@ -15,7 +15,8 @@ import {
 } from '@chakra-ui/react';
 import { LuAlignCenter, LuAlignLeft, LuAlignRight, LuInfo } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
-import type { AdElement, TextElement } from '../../types';
+import { usePhase } from '../../store/featureStore';
+import type { AdElement, TextElement, VectorElement } from '../../types';
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -29,10 +30,12 @@ function NumberField({
   label,
   value,
   onChange,
+  isDisabled,
 }: {
   label: string;
   value: number;
   onChange: (v: number) => void;
+  isDisabled?: boolean;
 }) {
   return (
     <Box flex={1}>
@@ -41,6 +44,7 @@ function NumberField({
         size="sm"
         borderRadius="6px"
         type="number"
+        isDisabled={isDisabled}
         value={Math.round(value)}
         onChange={(e) => onChange(Number(e.target.value))}
       />
@@ -48,7 +52,86 @@ function NumberField({
   );
 }
 
-function TextControls({ el }: { el: TextElement }) {
+function ColorField({
+  label,
+  value,
+  onChange,
+  isDisabled,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  isDisabled?: boolean;
+}) {
+  return (
+    <Box flex={1}>
+      <FieldLabel>{label}</FieldLabel>
+      <HStack spacing={2}>
+        <Box
+          as="input"
+          type="color"
+          value={value}
+          disabled={isDisabled}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange(e.target.value)}
+          width="36px"
+          height="32px"
+          p={0}
+          border="1px solid"
+          borderColor="gray.200"
+          borderRadius="6px"
+          cursor={isDisabled ? 'not-allowed' : 'pointer'}
+          bg="white"
+        />
+        <Input
+          size="sm"
+          borderRadius="6px"
+          value={value}
+          isDisabled={isDisabled}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      </HStack>
+    </Box>
+  );
+}
+
+function PositionSizeFields({ el, canEdit }: { el: AdElement; canEdit: boolean }) {
+  const update = useEditorStore((s) => s.updateElement);
+  const resizeElement = useEditorStore((s) => s.resizeElement);
+  return (
+    <Box>
+      <HStack spacing={5}>
+        <NumberField
+          label="X position"
+          value={el.position.x}
+          isDisabled={!canEdit}
+          onChange={(v) => update(el.id, { position: { ...el.position, x: v } })}
+        />
+        <NumberField
+          label="Y position"
+          value={el.position.y}
+          isDisabled={!canEdit}
+          onChange={(v) => update(el.id, { position: { ...el.position, y: v } })}
+        />
+      </HStack>
+      <HStack spacing={5} mt={4}>
+        <NumberField
+          label="Width"
+          value={el.size.width}
+          isDisabled={!canEdit}
+          onChange={(v) => resizeElement(el.id, { width: v, height: el.size.height })}
+        />
+        <NumberField
+          label="Height"
+          value={el.size.height}
+          isDisabled={!canEdit}
+          onChange={(v) => resizeElement(el.id, { width: el.size.width, height: v })}
+        />
+      </HStack>
+    </Box>
+  );
+}
+
+function TextControls({ el, canEdit }: { el: TextElement; canEdit: boolean }) {
   const update = useEditorStore((s) => s.updateTextElement);
 
   return (
@@ -110,20 +193,19 @@ function TextControls({ el }: { el: TextElement }) {
             onChange={(v) => update(el.id, { lineHeight: v / 10 })}
           />
         </HStack>
-
-        <HStack mt={5} spacing={5}>
-          <NumberField
-            label="X position"
-            value={el.position.x}
-            onChange={(v) => update(el.id, { position: { ...el.position, x: v } })}
-          />
-          <NumberField
-            label="Y position"
-            value={el.position.y}
-            onChange={(v) => update(el.id, { position: { ...el.position, y: v } })}
-          />
-        </HStack>
       </Box>
+
+      {canEdit && (
+        <Box>
+          <Text fontSize="17px" fontWeight={700} mb={3}>
+            Color &amp; layout
+          </Text>
+          <ColorField label="Text color" value={el.color} onChange={(v) => update(el.id, { color: v })} />
+          <Box mt={4}>
+            <PositionSizeFields el={el} canEdit={canEdit} />
+          </Box>
+        </Box>
+      )}
 
       <Box>
         <Text fontSize="17px" fontWeight={700} mb={2}>
@@ -169,69 +251,117 @@ function TextControls({ el }: { el: TextElement }) {
   );
 }
 
-function GroupOrGenericControls({ el }: { el: AdElement | null }) {
+function VectorControls({ el, canEdit }: { el: VectorElement; canEdit: boolean }) {
+  const update = useEditorStore((s) => s.updateElement);
+  const setFill = (fill: string) => {
+    const svg = el.svg.split(el.fill).join(fill);
+    update(el.id, { svg, fill } as Partial<AdElement>);
+  };
+  return (
+    <VStack align="stretch" spacing={6}>
+      <Text fontSize="13px" color="gray.500">
+        Vector element.
+      </Text>
+      {canEdit ? (
+        <>
+          <ColorField label="Fill color" value={el.fill} onChange={setFill} />
+          <PositionSizeFields el={el} canEdit={canEdit} />
+        </>
+      ) : (
+        <Text fontSize="13px" color="gray.500">
+          Enable Phase 1 to edit fill, size and position.
+        </Text>
+      )}
+    </VStack>
+  );
+}
+
+function ImageControls({ el, canEdit }: { el: AdElement; canEdit: boolean }) {
+  return (
+    <VStack align="stretch" spacing={6}>
+      <Text fontSize="13px" color="gray.500">
+        Image element. Drag a handle on the canvas to resize.
+      </Text>
+      {canEdit ? (
+        <PositionSizeFields el={el} canEdit={canEdit} />
+      ) : (
+        <Text fontSize="13px" color="gray.500">
+          Enable Phase 1 to edit size and position.
+        </Text>
+      )}
+    </VStack>
+  );
+}
+
+function GroupControls({ groupId, canGroup }: { groupId: string; canGroup: boolean }) {
   const groups = useEditorStore((s) => s.groups);
-  const selectedIds = useEditorStore((s) => s.selectedIds);
+  const elements = useEditorStore((s) => s.elements);
   const updateGroupTransform = useEditorStore((s) => s.updateGroupTransform);
-  const primaryId = selectedIds[selectedIds.length - 1] ?? null;
-  const group = primaryId ? groups[primaryId] : undefined;
+  const group = groups[groupId];
+  if (!group) return null;
 
-  if (group) {
-    return (
-      <VStack align="stretch" spacing={5}>
-        <Text fontSize="13px" color="gray.500">
-          Group transform composes onto all {group.children.length} child layers.
-        </Text>
-        <HStack spacing={5}>
-          <NumberField
-            label="X offset"
-            value={group.transform.x}
-            onChange={(v) => updateGroupTransform(group.id, { x: v })}
-          />
-          <NumberField
-            label="Y offset"
-            value={group.transform.y}
-            onChange={(v) => updateGroupTransform(group.id, { y: v })}
-          />
-        </HStack>
-        <HStack spacing={5}>
-          <NumberField
-            label="Rotation"
-            value={group.transform.rotation}
-            onChange={(v) => updateGroupTransform(group.id, { rotation: v })}
-          />
-          <NumberField
-            label="Opacity %"
-            value={group.transform.opacity * 100}
-            onChange={(v) => updateGroupTransform(group.id, { opacity: v / 100 })}
-          />
-        </HStack>
-      </VStack>
-    );
+  const children = elements.filter((e) => e.parentId === groupId);
+  let w = 0;
+  let h = 0;
+  if (children.length) {
+    const minX = Math.min(...children.map((c) => c.position.x));
+    const minY = Math.min(...children.map((c) => c.position.y));
+    const maxX = Math.max(...children.map((c) => c.position.x + c.size.width));
+    const maxY = Math.max(...children.map((c) => c.position.y + c.size.height));
+    w = maxX - minX;
+    h = maxY - minY;
   }
 
-  if (el) {
-    return (
-      <VStack align="stretch" spacing={5}>
-        <HStack spacing={5}>
-          <NumberField label="X position" value={el.position.x} onChange={() => undefined} />
-          <NumberField label="Y position" value={el.position.y} onChange={() => undefined} />
-        </HStack>
-        <Text fontSize="13px" color="gray.500">
-          {el.type} element. Drag it on the canvas to reposition.
-        </Text>
-      </VStack>
-    );
-  }
-
-  return null;
+  return (
+    <VStack align="stretch" spacing={5}>
+      <Text fontSize="13px" color="gray.500">
+        Group transform composes onto all {group.children.length} child layers.
+      </Text>
+      <HStack spacing={5}>
+        <NumberField
+          label="X offset"
+          value={group.transform.x}
+          isDisabled={!canGroup}
+          onChange={(v) => updateGroupTransform(group.id, { x: v })}
+        />
+        <NumberField
+          label="Y offset"
+          value={group.transform.y}
+          isDisabled={!canGroup}
+          onChange={(v) => updateGroupTransform(group.id, { y: v })}
+        />
+      </HStack>
+      <HStack spacing={5}>
+        <NumberField
+          label="Rotation"
+          value={group.transform.rotation}
+          isDisabled={!canGroup}
+          onChange={(v) => updateGroupTransform(group.id, { rotation: v })}
+        />
+        <NumberField
+          label="Opacity %"
+          value={group.transform.opacity * 100}
+          isDisabled={!canGroup}
+          onChange={(v) => updateGroupTransform(group.id, { opacity: v / 100 })}
+        />
+      </HStack>
+      <HStack spacing={5}>
+        <NumberField label="Width" value={w} isDisabled onChange={() => undefined} />
+        <NumberField label="Height" value={h} isDisabled onChange={() => undefined} />
+      </HStack>
+    </VStack>
+  );
 }
 
 export default function PropertiesPanel() {
   const elements = useEditorStore((s) => s.elements);
+  const groups = useEditorStore((s) => s.groups);
   const selectedIds = useEditorStore((s) => s.selectedIds);
+  const canEdit = usePhase('p1');
+  const canGroup = usePhase('p2');
   const primaryId = selectedIds[selectedIds.length - 1] ?? null;
   const el = elements.find((e) => e.id === primaryId) ?? null;
+  const group = primaryId ? groups[primaryId] : undefined;
 
   if (selectedIds.length > 1) {
     return (
@@ -246,7 +376,15 @@ export default function PropertiesPanel() {
 
   return (
     <Flex px={6} py={4} direction="column">
-      {el && el.type === 'TEXT' ? <TextControls el={el} /> : <GroupOrGenericControls el={el} />}
+      {group ? (
+        <GroupControls groupId={group.id} canGroup={canGroup} />
+      ) : el && el.type === 'TEXT' ? (
+        <TextControls el={el} canEdit={canEdit} />
+      ) : el && el.type === 'VECTOR' ? (
+        <VectorControls el={el} canEdit={canEdit} />
+      ) : el ? (
+        <ImageControls el={el} canEdit={canEdit} />
+      ) : null}
     </Flex>
   );
 }

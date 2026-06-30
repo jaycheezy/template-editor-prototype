@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Button, Flex, HStack, Icon, Input, Text } from '@chakra-ui/react';
 import { LuPencil } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
+import FeatureMenu from './FeatureMenu';
 
 export default function Topbar() {
   const name = useEditorStore((s) => s.name);
@@ -39,7 +40,8 @@ export default function Topbar() {
         />
       </HStack>
 
-      <Flex flex={1} justify="flex-end" gap={3}>
+      <Flex flex={1} justify="flex-end" align="center" gap={3}>
+        <FeatureMenu />
         <Button
           variant="solid"
           bg="#E4F3FF"

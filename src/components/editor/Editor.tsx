@@ -6,8 +6,10 @@ import LeftSidebar from './LeftSidebar';
 import RightSidebar from './RightSidebar';
 import Canvas from '../canvas/Canvas';
 import Timeline from '../timeline/Timeline';
+import { usePhase } from '../../store/featureStore';
 
 export default function Editor() {
+  const timeline = usePhase('p3a');
   return (
     <Flex direction="column" height="100vh" overflow="hidden">
       <HostBar />
@@ -17,7 +19,7 @@ export default function Editor() {
         <LeftSidebar />
         <Flex direction="column" flex={1} overflow="hidden" bg="gray.100">
           <Canvas />
-          <Timeline />
+          {timeline && <Timeline />}
         </Flex>
         <RightSidebar />
       </Flex>
