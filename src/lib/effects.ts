@@ -25,7 +25,8 @@ export interface EffectDef {
   build: (base: ResolvedTransform, intensity?: number) => EffectTrackSpec[];
 }
 
-const SLIDE = 60;
+/** default slide offset in px (scaled by a clip's intensity/distance). */
+export const SLIDE_DISTANCE = 60;
 
 /** clamp helper for intensity-derived values */
 const n = (v: number) => (Number.isFinite(v) ? v : 1);
@@ -68,7 +69,7 @@ function slideIn(dir: SlideDir): EffectDef {
     build: (b, i = 1) => [
       {
         property: axis,
-        keyframes: [{ at: 0, value: b[axis] + SLIDE_SIGN[dir] * SLIDE * n(i) }, { at: 1, value: b[axis] }],
+        keyframes: [{ at: 0, value: b[axis] + SLIDE_SIGN[dir] * SLIDE_DISTANCE * n(i) }, { at: 1, value: b[axis] }],
       },
     ],
   };
@@ -88,7 +89,7 @@ function slideOut(dir: SlideDir): EffectDef {
     build: (b, i = 1) => [
       {
         property: axis,
-        keyframes: [{ at: 0, value: b[axis] }, { at: 1, value: b[axis] + SLIDE_SIGN[dir] * SLIDE * n(i) }],
+        keyframes: [{ at: 0, value: b[axis] }, { at: 1, value: b[axis] + SLIDE_SIGN[dir] * SLIDE_DISTANCE * n(i) }],
       },
       { property: 'opacity', keyframes: [{ at: 0.4, value: 1 }, { at: 1, value: 0 }] },
     ],

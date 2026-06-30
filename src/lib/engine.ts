@@ -70,9 +70,17 @@ export function resolveAnimatedProps(
   const result = { ...base };
   const tracks = Object.values(animation.tracks).filter((t) => t.targetId === targetId);
 
+  // For each property, the most recently started active track wins. This lets an
+  // IN and an OUT animate the same property (e.g. x): the IN holds until the OUT
+  // begins, then the OUT (later onset) takes over — independent of apply order.
+  const chosen: Partial<Record<AnimatableProperty, number>> = {};
   for (const track of tracks) {
     const value = sampleTrack(track, tMs);
-    if (value !== null) {
+    if (value === null) continue;
+    const onset = sortKeyframes(track.keyframes)[0]?.tMs ?? 0;
+    const current = chosen[track.property];
+    if (current === undefined || onset >= current) {
+      chosen[track.property] = onset;
       result[track.property] = value;
     }
   }

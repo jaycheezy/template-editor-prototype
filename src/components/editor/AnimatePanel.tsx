@@ -21,7 +21,7 @@ import { LuCopy, LuPlus, LuSparkles, LuTrash2, LuDiamond } from 'react-icons/lu'
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { EASING_OPTIONS } from '../../lib/easing';
-import { effectsByKindForPhases, getEffect, PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
+import { effectsByKindForPhases, getEffect, PROPERTY_COLORS, PROPERTY_LABELS, SLIDE_DISTANCE } from '../../lib/effects';
 import type { AnimatableProperty, Clip, ClipKind, EasingFunction, Track } from '../../types';
 import { sortKeyframes } from '../../lib/engine';
 
@@ -48,7 +48,8 @@ function AppliedClipCard({ clip, canCustom, canExtended }: { clip: Clip; canCust
   const color = PROPERTY_COLORS[clipPrimaryProperty(clip, tracks)];
 
   const effect = clip.effectId ? getEffect(clip.effectId) : undefined;
-  const supportsIntensity = effect != null && effect.category !== 'fade';
+  const isSlide = effect != null && effect.id.startsWith('slide-');
+  const supportsIntensity = effect != null && effect.category !== 'fade' && !isSlide;
 
   return (
     <Box borderWidth="1px" borderLeftWidth="3px" borderLeftColor={color} borderColor="gray.200" borderRadius="8px" p={3} bg="gray.50">
@@ -128,6 +129,21 @@ function AppliedClipCard({ clip, canCustom, canExtended }: { clip: Clip; canCust
           ))}
         </Select>
       </Box>
+      {isSlide && (
+        <Box mb={3}>
+          <Text fontSize="11px" color="gray.500" mb={1}>
+            Distance (px)
+          </Text>
+          <Input
+            size="xs"
+            type="number"
+            step={10}
+            min={0}
+            value={Math.round((clip.intensity ?? 1) * SLIDE_DISTANCE)}
+            onChange={(e) => updateClipIntensity(clip.id, Math.max(0, Number(e.target.value)) / SLIDE_DISTANCE)}
+          />
+        </Box>
+      )}
       {canExtended && supportsIntensity && (
         <Box mb={3}>
           <HStack justify="space-between" mb={1}>

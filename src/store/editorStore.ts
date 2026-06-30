@@ -442,14 +442,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       const nextClips = { ...s.animation.clips };
       const nextTracks = { ...s.animation.tracks };
 
-      // v1 invariant: one canonical track per {targetId, property}. A new effect
-      // only overrides the properties it animates; other effects on the same
-      // element are kept, so multiple effects can stack (e.g. slide + grow).
+      // A new effect overrides only the properties it animates AND only against
+      // effects of the same kind (or stray custom tracks). This keeps one
+      // canonical track per {property, kind} so effects stack (slide + grow) and
+      // complementary kinds coexist (Slide In + Slide Out both animate x, but at
+      // different times, so neither should remove the other).
       const newProps = new Set(tracks.map((t) => t.property));
       Object.values(s.animation.tracks).forEach((t) => {
-        if (t.targetId === targetId && newProps.has(t.property)) {
-          delete nextTracks[t.id];
-        }
+        if (t.targetId !== targetId || !newProps.has(t.property)) return;
+        const existingClip = t.clipId ? s.animation.clips[t.clipId] : undefined;
+        const conflicts = existingClip ? existingClip.kind === effect.kind : true;
+        if (conflicts) delete nextTracks[t.id];
       });
       // Drop or trim any existing clip that lost tracks to the override above.
       Object.values(nextClips).forEach((c) => {
