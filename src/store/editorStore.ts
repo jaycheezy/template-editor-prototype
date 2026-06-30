@@ -36,6 +36,13 @@ export interface SelectedKeyframe {
   keyframeId: string;
 }
 
+/** Snapshot of the editable document for undo/redo history. */
+export interface DocSnapshot {
+  elements: AdElement[];
+  groups: Record<string, Group>;
+  animation: AnimationModel;
+}
+
 interface EditorState {
   name: string;
   advertiser: string;
@@ -110,6 +117,12 @@ interface EditorState {
   toggle: () => void;
   reset: () => void;
   setLoop: (loop: boolean) => void;
+
+  // history (undo / redo of document edits)
+  past: DocSnapshot[];
+  future: DocSnapshot[];
+  undo: () => void;
+  redo: () => void;
 }
 
 function baseTransformForTarget(state: EditorState, targetId: string): ResolvedTransform {
@@ -141,6 +154,9 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   currentTime: 1500,
   isPlaying: false,
   loop: true,
+
+  past: [],
+  future: [],
 
   setName: (name) => set({ name }),
   select: (id, options) =>
@@ -414,19 +430,35 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!effect) return;
     const base = baseTransformForTarget(state, targetId);
     const trackIndexBase = nextTrackIndex(state.animation, targetId);
-    const { clip, tracks } = buildEffectClip(targetId, base, effect, 0, trackIndexBase);
+    // OUT effects default to a 2s start so the layer is on-screen before it exits
+    // (clamped so the clip still fits within the timeline duration).
+    const defaultStart =
+      effect.kind === 'OUT'
+        ? Math.max(0, Math.min(2000, state.animation.durationMs - effect.defaultDuration))
+        : 0;
+    const { clip, tracks } = buildEffectClip(targetId, base, effect, defaultStart, trackIndexBase);
 
     set((s) => {
-      // Replace existing clip of same kind on this target (keeps things tidy).
-      const removeClipIds = Object.values(s.animation.clips)
-        .filter((c) => c.targetId === targetId && c.kind === effect.kind)
-        .map((c) => c.id);
       const nextClips = { ...s.animation.clips };
       const nextTracks = { ...s.animation.tracks };
-      removeClipIds.forEach((cid) => {
-        nextClips[cid]?.trackIds.forEach((tid) => delete nextTracks[tid]);
-        delete nextClips[cid];
+
+      // v1 invariant: one canonical track per {targetId, property}. A new effect
+      // only overrides the properties it animates; other effects on the same
+      // element are kept, so multiple effects can stack (e.g. slide + grow).
+      const newProps = new Set(tracks.map((t) => t.property));
+      Object.values(s.animation.tracks).forEach((t) => {
+        if (t.targetId === targetId && newProps.has(t.property)) {
+          delete nextTracks[t.id];
+        }
       });
+      // Drop or trim any existing clip that lost tracks to the override above.
+      Object.values(nextClips).forEach((c) => {
+        if (c.targetId !== targetId) return;
+        const remaining = c.trackIds.filter((tid) => nextTracks[tid]);
+        if (remaining.length === 0) delete nextClips[c.id];
+        else if (remaining.length !== c.trackIds.length) nextClips[c.id] = { ...c, trackIds: remaining };
+      });
+
       nextClips[clip.id] = clip;
       tracks.forEach((t) => {
         nextTracks[t.id] = t;
@@ -720,4 +752,75 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   toggle: () => set((s) => ({ isPlaying: !s.isPlaying })),
   reset: () => set({ currentTime: 0, isPlaying: false }),
   setLoop: (loop) => set({ loop }),
+
+  undo: () => {
+    const { past } = get();
+    if (!past.length) return;
+    const prevSnap = past[past.length - 1];
+    const current: DocSnapshot = {
+      elements: get().elements,
+      groups: get().groups,
+      animation: get().animation,
+    };
+    timeTraveling = true;
+    set({
+      elements: prevSnap.elements,
+      groups: prevSnap.groups,
+      animation: prevSnap.animation,
+      past: past.slice(0, -1),
+      future: [current, ...get().future],
+    });
+    timeTraveling = false;
+  },
+
+  redo: () => {
+    const { future } = get();
+    if (!future.length) return;
+    const nextSnap = future[0];
+    const current: DocSnapshot = {
+      elements: get().elements,
+      groups: get().groups,
+      animation: get().animation,
+    };
+    timeTraveling = true;
+    set({
+      elements: nextSnap.elements,
+      groups: nextSnap.groups,
+      animation: nextSnap.animation,
+      future: future.slice(1),
+      past: [...get().past, current],
+    });
+    timeTraveling = false;
+  },
 }));
+
+/**
+ * Record document edits for undo/redo. Continuous bursts (drags, rapid typing)
+ * coalesce into a single history entry so one undo reverts the whole gesture.
+ */
+let timeTraveling = false;
+let lastRecord = 0;
+const COALESCE_MS = 350;
+
+useEditorStore.subscribe((state, prev) => {
+  if (timeTraveling) return;
+  const docChanged =
+    state.elements !== prev.elements ||
+    state.groups !== prev.groups ||
+    state.animation !== prev.animation;
+  if (!docChanged) return;
+
+  const now = Date.now();
+  if (now - lastRecord < COALESCE_MS) {
+    lastRecord = now;
+    return;
+  }
+  lastRecord = now;
+
+  const snap: DocSnapshot = {
+    elements: prev.elements,
+    groups: prev.groups,
+    animation: prev.animation,
+  };
+  useEditorStore.setState((s) => ({ past: [...s.past, snap].slice(-100), future: [] }));
+});

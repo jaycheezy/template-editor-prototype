@@ -177,16 +177,26 @@ export function isEffectivelyLocked(
   return false;
 }
 
-/** Compute final transforms for every element at time t. */
+const IDENTITY: ResolvedTransform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1 };
+
+/**
+ * Compute final transforms for every element at time t.
+ * When `includeGroups` is false (grouping disabled) group transforms, group
+ * animations and group visibility cascades are ignored — elements render purely
+ * from their own state.
+ */
 export function renderScene(
   elements: AdElement[],
   groups: Record<string, Group>,
   animation: AnimationModel,
   tMs: number,
+  includeGroups = true,
 ): RenderedElement[] {
   return elements.map((element) => {
     const own = resolveAnimatedProps(element.id, baseTransformForElement(element), animation, tMs);
-    const groupChain = resolveGroupChain(element.parentId, groups, animation, tMs);
+    const groupChain = includeGroups
+      ? resolveGroupChain(element.parentId, groups, animation, tMs)
+      : IDENTITY;
     // Group transform x/y are offsets; element own x/y are absolute positions.
     const transform: ResolvedTransform = {
       x: own.x + groupChain.x,
@@ -196,7 +206,8 @@ export function renderScene(
       scaleY: own.scaleY * groupChain.scaleY,
       opacity: own.opacity * groupChain.opacity,
     };
-    return { element, transform, hidden: isEffectivelyHidden(element, groups) };
+    const hidden = includeGroups ? isEffectivelyHidden(element, groups) : Boolean(element.hidden);
+    return { element, transform, hidden };
   });
 }
 

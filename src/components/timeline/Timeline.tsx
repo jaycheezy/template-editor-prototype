@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Box, Flex, HStack, Icon, IconButton, Input, Text } from '@chakra-ui/react';
 import {
   LuPlay,
@@ -90,38 +90,6 @@ export default function Timeline() {
 
   const { durationMs, fps, tracks, clips } = animation;
   const containerRef = useRef<HTMLDivElement>(null);
-
-  // playback loop
-  const rafRef = useRef<number | undefined>(undefined);
-  const lastRef = useRef<number>(0);
-  useEffect(() => {
-    if (!isPlaying) {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-      return;
-    }
-    lastRef.current = performance.now();
-    const tick = (now: number) => {
-      const delta = now - lastRef.current;
-      lastRef.current = now;
-      const state = useEditorStore.getState();
-      const next = state.currentTime + delta;
-      if (next >= durationMs) {
-        if (loop) state.setCurrentTime(0);
-        else {
-          state.setCurrentTime(durationMs);
-          state.pause();
-          return;
-        }
-      } else {
-        state.setCurrentTime(next);
-      }
-      rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [isPlaying, durationMs, loop]);
 
   const entriesFor = useCallback(
     (targetId: string): Entry[] => {

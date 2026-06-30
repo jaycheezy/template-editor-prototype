@@ -22,11 +22,13 @@ preview the product at different stages. Phases map to the ARENA spec:
 | --- | --- |
 | **1 · Canvas editing** | Move / resize (corner handles) / add / rename / recolor / lock / hide / reorder elements; multi-element move; properties panel colour, size and position fields. |
 | **2 · Grouping** | Create / ungroup / rename groups, nested layer tree, enter-group editing (double-click), group transforms; turning it off flattens the layer + timeline lists. |
-| **3a · Timeline & presets** | Animation timeline, playback, and the starter IN / OUT presets. Turning it off hides the timeline and Animate tab. |
+| **3a.1 · Preset animations** | Apply IN / OUT presets to layers/groups and preview them playing in the rendered canvas via a slim transport bar (no track editor). Turning it off hides the Animate tab and playback. |
+| **3a.2 · Timeline** | Per-layer track editor: ruler, draggable clips, retiming and scrubbing. Replaces the slim transport bar. |
 | **3b · Extended effects** | DURING effects, extra presets (Spin), per-effect **intensity**, and effect duplication. |
 | **3c · Custom keyframes** | CUSTOM tab, convert-to-custom (delayed-entrance preserved), keyframe duplicate / track-shift, timeline zoom and snapping. |
 
-3b and 3c depend on 3a (they need the timeline), so they auto-disable when 3a is off.
+Dependencies: timeline (3a.2) and extended effects (3b) need preset animations (3a.1);
+custom keyframes (3c) need the timeline (3a.2). Phases auto-disable when a prerequisite is turned off.
 
 ## What's in here
 

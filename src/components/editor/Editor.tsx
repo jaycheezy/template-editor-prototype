@@ -6,10 +6,14 @@ import LeftSidebar from './LeftSidebar';
 import RightSidebar from './RightSidebar';
 import Canvas from '../canvas/Canvas';
 import Timeline from '../timeline/Timeline';
+import PreviewControls from '../timeline/PreviewControls';
 import { usePhase } from '../../store/featureStore';
+import { usePlaybackLoop } from '../../lib/usePlayback';
 
 export default function Editor() {
-  const timeline = usePhase('p3a');
+  usePlaybackLoop();
+  const presets = usePhase('p3a');
+  const timeline = usePhase('p3at');
   return (
     <Flex direction="column" height="100vh" overflow="hidden">
       <HostBar />
@@ -19,7 +23,7 @@ export default function Editor() {
         <LeftSidebar />
         <Flex direction="column" flex={1} overflow="hidden" bg="gray.100">
           <Canvas />
-          {timeline && <Timeline />}
+          {presets && (timeline ? <Timeline /> : <PreviewControls />)}
         </Flex>
         <RightSidebar />
       </Flex>

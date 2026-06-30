@@ -3,7 +3,7 @@
  * Each phase is a togglable bundle so the prototype can preview the product at
  * different stages of the roadmap. 3b/3c depend on 3a (they need the timeline).
  */
-export type PhaseId = 'p1' | 'p2' | 'p3a' | 'p3b' | 'p3c';
+export type PhaseId = 'p1' | 'p2' | 'p3a' | 'p3at' | 'p3b' | 'p3c';
 
 export interface PhaseMeta {
   id: PhaseId;
@@ -33,10 +33,18 @@ export const PHASES: PhaseMeta[] = [
   },
   {
     id: 'p3a',
-    label: 'Phase 3a · Timeline & presets',
-    short: 'Timeline & presets',
-    description: 'Animation timeline with IN / OUT presets, playback and clip timing.',
+    label: 'Phase 3a.1 · Preset animations',
+    short: 'Preset animations',
+    description:
+      'Apply IN / OUT presets to layers and groups and preview them playing in the rendered canvas (no track editor).',
     requires: [],
+  },
+  {
+    id: 'p3at',
+    label: 'Phase 3a.2 · Timeline',
+    short: 'Timeline',
+    description: 'Per-layer track editor: ruler, draggable clips, retiming and scrubbing.',
+    requires: ['p3a'],
   },
   {
     id: 'p3b',
@@ -50,7 +58,7 @@ export const PHASES: PhaseMeta[] = [
     label: 'Phase 3c · Custom keyframes',
     short: 'Custom keyframes',
     description: 'Custom keyframe authoring, convert-to-custom, timeline zoom and snapping.',
-    requires: ['p3a'],
+    requires: ['p3at'],
   },
 ];
 

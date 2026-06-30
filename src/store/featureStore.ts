@@ -3,8 +3,8 @@ import { PHASE_BY_ID, PHASES, type PhaseId } from '../lib/phases';
 
 type FlagMap = Record<PhaseId, boolean>;
 
-const ALL_ON: FlagMap = PHASES.reduce((acc, p) => {
-  acc[p.id] = true;
+const ALL_OFF: FlagMap = PHASES.reduce((acc, p) => {
+  acc[p.id] = false;
   return acc;
 }, {} as FlagMap);
 
@@ -17,13 +17,14 @@ interface FeatureState {
 }
 
 /**
- * Resolve raw flags into effective flags, honouring phase dependencies
- * (e.g. 3b/3c are inert unless 3a is on).
+ * Resolve raw flags into effective flags, honouring phase dependencies.
+ * PHASES is ordered so prerequisites come first, so we can cascade against the
+ * already-resolved `out` map (handles multi-level chains like 3c → timeline → presets).
  */
 export function resolveEffective(flags: FlagMap): FlagMap {
   const out = { ...flags };
   PHASES.forEach((p) => {
-    if (out[p.id] && p.requires.some((req) => !flags[req])) {
+    if (out[p.id] && p.requires.some((req) => !out[req])) {
       out[p.id] = false;
     }
   });
@@ -31,21 +32,33 @@ export function resolveEffective(flags: FlagMap): FlagMap {
 }
 
 export const useFeatureStore = create<FeatureState>((set) => ({
-  flags: { ...ALL_ON },
+  flags: { ...ALL_OFF },
   setFlag: (id, value) =>
     set((s) => {
       const flags = { ...s.flags, [id]: value };
-      // turning a phase off also disables phases that depend on it
       if (!value) {
-        PHASES.forEach((p) => {
-          if (p.requires.includes(id)) flags[p.id] = false;
-        });
-      }
-      // turning a phase on re-enables its prerequisites
-      if (value) {
-        PHASE_BY_ID[id].requires.forEach((req) => {
-          flags[req] = true;
-        });
+        // turning a phase off also disables anything that (transitively) depends on it
+        let changed = true;
+        while (changed) {
+          changed = false;
+          PHASES.forEach((p) => {
+            if (flags[p.id] && p.requires.some((req) => !flags[req])) {
+              flags[p.id] = false;
+              changed = true;
+            }
+          });
+        }
+      } else {
+        // turning a phase on re-enables all of its (transitive) prerequisites
+        const enable = (pid: PhaseId) => {
+          PHASE_BY_ID[pid].requires.forEach((req) => {
+            if (!flags[req]) {
+              flags[req] = true;
+              enable(req);
+            }
+          });
+        };
+        enable(id);
       }
       return { flags };
     }),
@@ -58,7 +71,7 @@ export const useFeatureStore = create<FeatureState>((set) => ({
         return acc;
       }, {} as FlagMap),
     })),
-  reset: () => set(() => ({ flags: { ...ALL_ON } })),
+  reset: () => set(() => ({ flags: { ...ALL_OFF } })),
 }));
 
 /** Hook: is a given phase effectively enabled (after dependency resolution)? */

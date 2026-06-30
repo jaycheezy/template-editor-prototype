@@ -125,8 +125,8 @@ export default function Canvas() {
   );
 
   const rendered = useMemo(
-    () => renderScene(elements, groups, animation, currentTime),
-    [elements, groups, animation, currentTime],
+    () => renderScene(elements, groups, animation, currentTime, canGroup),
+    [elements, groups, animation, currentTime, canGroup],
   );
 
   const paintOrder = useMemo(() => {

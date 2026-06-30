@@ -1,13 +1,31 @@
-import { useState } from 'react';
-import { Button, Flex, HStack, Icon, Input, Text } from '@chakra-ui/react';
-import { LuPencil } from 'react-icons/lu';
+import { useEffect, useState } from 'react';
+import { Button, Divider, Flex, HStack, Icon, IconButton, Input, Text } from '@chakra-ui/react';
+import { LuPencil, LuUndo2, LuRedo2 } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
 import FeatureMenu from './FeatureMenu';
 
 export default function Topbar() {
   const name = useEditorStore((s) => s.name);
   const setName = useEditorStore((s) => s.setName);
+  const undo = useEditorStore((s) => s.undo);
+  const redo = useEditorStore((s) => s.redo);
+  const canUndo = useEditorStore((s) => s.past.length > 0);
+  const canRedo = useEditorStore((s) => s.future.length > 0);
   const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod || e.key.toLowerCase() !== 'z') return;
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)) return;
+      e.preventDefault();
+      if (e.shiftKey) redo();
+      else undo();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [undo, redo]);
 
   return (
     <Flex h="56px" align="center" px={4} borderBottomWidth="1px" borderColor="gray.200" bg="white" flexShrink={0}>
@@ -41,6 +59,29 @@ export default function Topbar() {
       </HStack>
 
       <Flex flex={1} justify="flex-end" align="center" gap={3}>
+        <HStack spacing={1}>
+          <IconButton
+            aria-label="Undo"
+            title="Undo (⌘/Ctrl+Z)"
+            size="sm"
+            variant="ghost"
+            color="gray.600"
+            icon={<Icon as={LuUndo2} />}
+            isDisabled={!canUndo}
+            onClick={undo}
+          />
+          <IconButton
+            aria-label="Redo"
+            title="Redo (⌘/Ctrl+Shift+Z)"
+            size="sm"
+            variant="ghost"
+            color="gray.600"
+            icon={<Icon as={LuRedo2} />}
+            isDisabled={!canRedo}
+            onClick={redo}
+          />
+        </HStack>
+        <Divider orientation="vertical" h="24px" />
         <FeatureMenu />
         <Button
           variant="solid"

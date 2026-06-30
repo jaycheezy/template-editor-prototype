@@ -30,6 +30,71 @@ const SLIDE = 60;
 /** clamp helper for intensity-derived values */
 const n = (v: number) => (Number.isFinite(v) ? v : 1);
 
+type SlideDir = 'left' | 'right' | 'up' | 'down';
+
+const SLIDE_AXIS: Record<SlideDir, AnimatableProperty> = {
+  left: 'x',
+  right: 'x',
+  up: 'y',
+  down: 'y',
+};
+
+/** sign of the offset relative to the base position for a given edge */
+const SLIDE_SIGN: Record<SlideDir, number> = {
+  left: -1,
+  right: 1,
+  up: -1,
+  down: 1,
+};
+
+const DIR_LABEL: Record<SlideDir, string> = {
+  left: 'Left',
+  right: 'Right',
+  up: 'Up',
+  down: 'Down',
+};
+
+/** Slide In: element enters from the named edge toward its base position. */
+function slideIn(dir: SlideDir): EffectDef {
+  const axis = SLIDE_AXIS[dir];
+  return {
+    id: `slide-in-${dir}`,
+    label: `Slide In ${DIR_LABEL[dir]}`,
+    kind: 'IN',
+    category: 'slide',
+    phase: 'p3a',
+    defaultDuration: 500,
+    defaultEasing: 'easeOut',
+    build: (b, i = 1) => [
+      {
+        property: axis,
+        keyframes: [{ at: 0, value: b[axis] + SLIDE_SIGN[dir] * SLIDE * n(i) }, { at: 1, value: b[axis] }],
+      },
+    ],
+  };
+}
+
+/** Slide Out: element exits from its base position toward the named edge. */
+function slideOut(dir: SlideDir): EffectDef {
+  const axis = SLIDE_AXIS[dir];
+  return {
+    id: `slide-out-${dir}`,
+    label: `Slide Out ${DIR_LABEL[dir]}`,
+    kind: 'OUT',
+    category: 'slide',
+    phase: 'p3a',
+    defaultDuration: 500,
+    defaultEasing: 'easeIn',
+    build: (b, i = 1) => [
+      {
+        property: axis,
+        keyframes: [{ at: 0, value: b[axis] }, { at: 1, value: b[axis] + SLIDE_SIGN[dir] * SLIDE * n(i) }],
+      },
+      { property: 'opacity', keyframes: [{ at: 0.4, value: 1 }, { at: 1, value: 0 }] },
+    ],
+  };
+}
+
 export const EFFECTS: EffectDef[] = [
   // ---- IN (3a starter set) ----
   {
@@ -42,46 +107,23 @@ export const EFFECTS: EffectDef[] = [
     defaultEasing: 'easeOut',
     build: () => [{ property: 'opacity', keyframes: [{ at: 0, value: 0 }, { at: 1, value: 1 }] }],
   },
-  {
-    id: 'slide-in-left',
-    label: 'Slide In Left',
-    kind: 'IN',
-    category: 'slide',
-    phase: 'p3a',
-    defaultDuration: 600,
-    defaultEasing: 'easeOutBack',
-    build: (b, i = 1) => [
-      { property: 'x', keyframes: [{ at: 0, value: b.x - SLIDE * n(i) }, { at: 1, value: b.x }] },
-      { property: 'opacity', keyframes: [{ at: 0, value: 0 }, { at: 0.6, value: 1 }] },
-    ],
-  },
-  {
-    id: 'slide-in-up',
-    label: 'Slide In Up',
-    kind: 'IN',
-    category: 'slide',
-    phase: 'p3a',
-    defaultDuration: 600,
-    defaultEasing: 'easeOutBack',
-    build: (b, i = 1) => [
-      { property: 'y', keyframes: [{ at: 0, value: b.y + SLIDE * n(i) }, { at: 1, value: b.y }] },
-      { property: 'opacity', keyframes: [{ at: 0, value: 0 }, { at: 0.6, value: 1 }] },
-    ],
-  },
+  slideIn('left'),
+  slideIn('right'),
+  slideIn('up'),
+  slideIn('down'),
   {
     id: 'pop-in',
     label: 'Grow In',
     kind: 'IN',
     category: 'scale',
     phase: 'p3a',
-    defaultDuration: 550,
-    defaultEasing: 'easeOutBack',
+    defaultDuration: 500,
+    defaultEasing: 'easeOut',
     build: (_b, i = 1) => {
       const from = Math.max(0.05, 1 - 0.6 * n(i));
       return [
         { property: 'scaleX', keyframes: [{ at: 0, value: from }, { at: 1, value: 1 }] },
         { property: 'scaleY', keyframes: [{ at: 0, value: from }, { at: 1, value: 1 }] },
-        { property: 'opacity', keyframes: [{ at: 0, value: 0 }, { at: 0.5, value: 1 }] },
       ];
     },
   },
@@ -95,7 +137,6 @@ export const EFFECTS: EffectDef[] = [
     defaultEasing: 'easeOut',
     build: (b, i = 1) => [
       { property: 'rotation', keyframes: [{ at: 0, value: b.rotation - 180 * n(i) }, { at: 1, value: b.rotation }] },
-      { property: 'opacity', keyframes: [{ at: 0, value: 0 }, { at: 0.5, value: 1 }] },
     ],
   },
   // ---- DURING (3b) ----
@@ -161,19 +202,10 @@ export const EFFECTS: EffectDef[] = [
     defaultEasing: 'easeIn',
     build: () => [{ property: 'opacity', keyframes: [{ at: 0, value: 1 }, { at: 1, value: 0 }] }],
   },
-  {
-    id: 'slide-out-right',
-    label: 'Slide Out Right',
-    kind: 'OUT',
-    category: 'slide',
-    phase: 'p3a',
-    defaultDuration: 600,
-    defaultEasing: 'easeIn',
-    build: (b, i = 1) => [
-      { property: 'x', keyframes: [{ at: 0, value: b.x }, { at: 1, value: b.x + SLIDE * n(i) }] },
-      { property: 'opacity', keyframes: [{ at: 0.4, value: 1 }, { at: 1, value: 0 }] },
-    ],
-  },
+  slideOut('left'),
+  slideOut('right'),
+  slideOut('up'),
+  slideOut('down'),
   {
     id: 'pop-out',
     label: 'Shrink Out',
