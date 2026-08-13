@@ -44,8 +44,8 @@ export default function LeftSidebar() {
       direction="column"
       borderRightWidth="1px"
       borderColor="gray.200"
-      minW="216px"
-      maxW="216px"
+      minW="280px"
+      maxW="280px"
       bg="white"
       flexShrink={0}
       overflowY="auto"
@@ -62,6 +62,7 @@ export default function LeftSidebar() {
                 variant="ghost"
                 color="gray.600"
                 isDisabled={selectedIds.length < 1}
+                title="Group selection (⌘G)"
                 onClick={() => groupSelection()}
               />
             )}
@@ -103,7 +104,7 @@ export default function LeftSidebar() {
             fontSize="11px"
             color="mcBlue.700"
           >
-            <Text noOfLines={1}>Inside: {groups[enteredGroupId].name}</Text>
+            <Text noOfLines={1}>Inside: {groups[enteredGroupId].name} (Esc to exit)</Text>
             <Button size="xs" variant="ghost" leftIcon={<Icon as={LuX} boxSize={3} />} onClick={() => exitGroup()}>
               Exit
             </Button>

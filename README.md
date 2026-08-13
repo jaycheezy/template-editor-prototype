@@ -33,7 +33,7 @@ Deep links use `?epic=ADSCM-1371` (or `1380` / `1386` / `1392` / `1401`). That t
 | --- | --- | --- |
 | **Apply & play animations** | [ADSCM-1371](https://sportradar.atlassian.net/browse/ADSCM-1371) | Apply IN / OUT presets and preview them playing via a slim transport bar (no track editor). Live HTML / Ad Tag delivery is **not** in this prototype. |
 | **Fix existing layout** | [ADSCM-1380](https://sportradar.atlassian.net/browse/ADSCM-1380) | Move, lock/hide, reorder, multi-select and move together. |
-| **Add & restyle elements** | [ADSCM-1386](https://sportradar.atlassian.net/browse/ADSCM-1386) | Add, rename, resize, recolor, and delete layers. |
+| **Add & restyle elements** | [ADSCM-1386](https://sportradar.atlassian.net/browse/ADSCM-1386) | Add, rename, resize, and recolor layers. |
 | **Groups** | [ADSCM-1392](https://sportradar.atlassian.net/browse/ADSCM-1392) | Create / ungroup / rename groups, nested layer tree, enter-group editing, group transforms. |
 | **Timeline** | [ADSCM-1401](https://sportradar.atlassian.net/browse/ADSCM-1401) | Per-layer track editor: ruler, draggable clips, retiming and scrubbing. |
 

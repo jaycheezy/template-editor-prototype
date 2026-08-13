@@ -23,8 +23,18 @@ import {
   sortKeyframes,
   type ResolvedTransform,
 } from '../lib/engine';
-import { applyLayerMove, reassignGlobalZ, type LayerDropTarget } from '../lib/layers';
-import { resolveSelection, type SelectOptions } from '../lib/selection';
+import {
+  applyFlatLayerMove,
+  applyNodeMove,
+  assignZFromFrontFirstOrder,
+  buildInitialRootOrder,
+  insertNodeInParent,
+  isBackgroundNode,
+  nodeParentId,
+  reassignGlobalZ,
+  type LayerDropTarget,
+} from '../lib/layers';
+import { isInEnteredScope, resolveSelection, type SelectOptions } from '../lib/selection';
 import { createElement, type NewElementType } from '../lib/factory';
 
 export type ZOrderOp = 'front' | 'back' | 'forward' | 'backward';
@@ -40,6 +50,7 @@ export interface SelectedKeyframe {
 export interface DocSnapshot {
   elements: AdElement[];
   groups: Record<string, Group>;
+  rootOrder: string[];
   animation: AnimationModel;
 }
 
@@ -48,6 +59,7 @@ interface EditorState {
   advertiser: string;
   elements: AdElement[];
   groups: Record<string, Group>;
+  rootOrder: string[];
   animation: AnimationModel;
   dataSources: typeof mockDataSources;
 
@@ -74,12 +86,12 @@ interface EditorState {
   moveSelectionBy: (ids: string[], dx: number, dy: number) => void;
   resizeElement: (id: string, size: { width: number; height: number }, position?: { x: number; y: number }) => void;
   deleteElement: (id: string) => void;
-  moveElementLayer: (elementId: string, target: LayerDropTarget) => void;
+  moveElementLayer: (nodeId: string, target: LayerDropTarget, options?: { flat?: boolean }) => string | null;
   addElement: (type: NewElementType) => void;
   renameElement: (id: string, name: string) => void;
   toggleElementHidden: (id: string) => void;
   toggleElementLocked: (id: string) => void;
-  reorderElementZ: (id: string, op: ZOrderOp) => void;
+  reorderElementZ: (id: string, op: ZOrderOp, options?: { flat?: boolean }) => void;
 
   // grouping
   toggleGroupCollapsed: (groupId: string) => void;
@@ -89,6 +101,7 @@ interface EditorState {
   toggleGroupLocked: (groupId: string) => void;
   groupSelection: () => void;
   ungroup: (groupId: string) => void;
+  ungroupSelection: () => void;
   enterGroup: (groupId: string) => void;
   exitGroup: () => void;
 
@@ -141,8 +154,9 @@ function nextTrackIndex(animation: AnimationModel, targetId: string): number {
 export const useEditorStore = create<EditorState>((set, get) => ({
   name: '300X250_soccer_FTR',
   advertiser: 'Demo Website',
-  elements: reassignGlobalZ(mockElements, mockGroups),
+  elements: reassignGlobalZ(mockElements, mockGroups, buildInitialRootOrder(mockElements, mockGroups)),
   groups: mockGroups,
+  rootOrder: buildInitialRootOrder(mockElements, mockGroups),
   animation: buildInitialAnimation(),
   dataSources: mockDataSources,
 
@@ -160,7 +174,17 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   setName: (name) => set({ name }),
   select: (id, options) =>
-    set((s) => resolveSelection(s.selectedIds, s.selectionAnchorId, id, options)),
+    set((s) => {
+      if (
+        id &&
+        s.enteredGroupId &&
+        !isInEnteredScope(id, s.enteredGroupId, s.groups, s.elements)
+      ) {
+        const next = resolveSelection(s.selectedIds, s.selectionAnchorId, id, options);
+        return { ...next, enteredGroupId: null };
+      }
+      return resolveSelection(s.selectedIds, s.selectionAnchorId, id, options);
+    }),
   setRightMode: (rightMode) => set({ rightMode }),
 
   updateElement: (id, patch) =>
@@ -184,18 +208,36 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   moveSelectionBy: (ids, dx, dy) =>
     set((s) => {
-      const movable = new Set(
-        ids.filter((id) => {
-          const el = s.elements.find((e) => e.id === id);
-          return el && !isEffectivelyLocked(el, s.groups);
-        }),
-      );
+      const nextGroups = { ...s.groups };
+      let groupsChanged = false;
+      const movableElements = new Set<string>();
+
+      ids.forEach((id) => {
+        const group = nextGroups[id];
+        if (group) {
+          if (group.locked) return;
+          nextGroups[id] = {
+            ...group,
+            transform: {
+              ...group.transform,
+              x: Math.round(group.transform.x + dx),
+              y: Math.round(group.transform.y + dy),
+            },
+          };
+          groupsChanged = true;
+          return;
+        }
+        const el = s.elements.find((e) => e.id === id);
+        if (el && !isEffectivelyLocked(el, s.groups)) movableElements.add(id);
+      });
+
       return {
         elements: s.elements.map((e) =>
-          movable.has(e.id)
+          movableElements.has(e.id)
             ? { ...e, position: { ...e.position, x: Math.round(e.position.x + dx), y: Math.round(e.position.y + dy) } }
             : e,
         ),
+        groups: groupsChanged ? nextGroups : s.groups,
       };
     }),
 
@@ -214,10 +256,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   addElement: (type) =>
     set((s) => {
       const maxZ = s.elements.reduce((m, e) => Math.max(m, e.position.z), 0);
-      const el = createElement(type, CANVAS.width / 2, CANVAS.height / 2, maxZ + 1);
-      const elements = reassignGlobalZ([...s.elements, el], s.groups);
+      const parentId = s.enteredGroupId;
+      const el = { ...createElement(type, CANVAS.width / 2, CANVAS.height / 2, maxZ + 1), parentId };
+      let nextGroups = s.groups;
+      let nextRoot = s.rootOrder;
+      if (parentId && nextGroups[parentId]) {
+        nextGroups = {
+          ...nextGroups,
+          [parentId]: { ...nextGroups[parentId], children: [...nextGroups[parentId].children, el.id] },
+        };
+      } else {
+        nextRoot = [...nextRoot, el.id];
+      }
+      const elements = reassignGlobalZ([...s.elements, el], nextGroups, nextRoot);
       return {
         elements,
+        groups: nextGroups,
+        rootOrder: nextRoot,
         selectedIds: [el.id],
         selectionAnchorId: el.id,
         rightMode: 'properties',
@@ -241,12 +296,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       ),
     })),
 
-  reorderElementZ: (id, op) =>
+  reorderElementZ: (id, op, options) =>
     set((s) => {
       const el = s.elements.find((e) => e.id === id);
-      if (!el) return {};
+      if (!el || el.locked) return {};
+      const flat = Boolean(options?.flat);
       const siblings = s.elements
-        .filter((e) => e.parentId === el.parentId && !e.locked)
+        .filter((e) => !e.locked && (flat || e.parentId === el.parentId))
         .sort((a, b) => a.position.z - b.position.z)
         .map((e) => e.id);
       const idx = siblings.indexOf(id);
@@ -258,6 +314,11 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       else if (op === 'forward') insertAt = Math.min(idx + 1, siblings.length);
       else if (op === 'backward') insertAt = Math.max(idx - 1, 0);
       siblings.splice(insertAt, 0, id);
+
+      if (flat) {
+        // siblings is back-to-front; layer list / z assignment wants front-first
+        return { elements: assignZFromFrontFirstOrder(s.elements, [...siblings].reverse()) };
+      }
 
       // siblings is back-to-front (low z first); reflect into stored z within the sibling set
       const zForId = new Map<string, number>();
@@ -301,17 +362,26 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         elements: nextElements,
         groups: nextGroups,
+        rootOrder: s.rootOrder.filter((nid) => nid !== id),
         animation: { ...s.animation, tracks: nextTracks, clips: nextClips },
         selectedIds: s.selectedIds.filter((sid) => sid !== id),
         selectionAnchorId: s.selectionAnchorId === id ? null : s.selectionAnchorId,
       };
     }),
 
-  moveElementLayer: (elementId, target) =>
-    set((s) => {
-      const result = applyLayerMove(s.elements, s.groups, elementId, target);
-      return result ?? {};
-    }),
+  moveElementLayer: (nodeId, target, options) => {
+    if (options?.flat) {
+      const elements = applyFlatLayerMove(get().elements, nodeId, target.beforeId);
+      if (elements) set({ elements });
+      return null;
+    }
+    const s = get();
+    const result = applyNodeMove(s.elements, s.groups, s.rootOrder, nodeId, target);
+    if (!result) return null;
+    if (result.error) return result.error;
+    set({ elements: result.elements, groups: result.groups, rootOrder: result.rootOrder });
+    return null;
+  },
 
   toggleGroupCollapsed: (groupId) =>
     set((s) => ({
@@ -349,39 +419,70 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   groupSelection: () =>
     set((s) => {
-      // Group selected root-level elements (and members of other groups) into a new root group.
       const memberIds = s.selectedIds.filter((id) => {
+        if (isBackgroundNode(s.elements, id)) return false;
+        if (s.enteredGroupId && id === s.enteredGroupId) return false;
+        if (s.enteredGroupId && !isInEnteredScope(id, s.enteredGroupId, s.groups, s.elements)) return false;
         const el = s.elements.find((e) => e.id === id);
-        return el && !el.locked;
+        if (el) return !el.locked;
+        const group = s.groups[id];
+        return Boolean(group && !group.locked);
       });
       if (memberIds.length < 1) return {};
 
-      const gid = uid('group');
-      const orderedMembers = s.elements
-        .filter((e) => memberIds.includes(e.id))
-        .sort((a, b) => b.position.z - a.position.z)
-        .map((e) => e.id);
+      const parents = memberIds.map((id) => nodeParentId(id, s.elements, s.groups));
+      const parentId = parents[0];
+      if (parents.some((p) => p !== parentId)) return {};
 
-      const nextGroups: Record<string, Group> = {};
+      const siblingOrder =
+        parentId && s.groups[parentId] ? s.groups[parentId].children : s.rootOrder;
+      const orderedMembers = [...memberIds].sort((a, b) => {
+        const ai = siblingOrder.indexOf(a);
+        const bi = siblingOrder.indexOf(b);
+        if (ai === -1 && bi === -1) return a.localeCompare(b);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+
+      const gid = uid('group');
+      const firstIndex = siblingOrder.findIndex((id) => memberIds.includes(id));
+      const beforeId =
+        firstIndex >= 0
+          ? siblingOrder.slice(firstIndex + 1).find((id) => !memberIds.includes(id)) ?? null
+          : null;
+
+      let nextGroups: Record<string, Group> = {};
       Object.entries(s.groups).forEach(([id, g]) => {
         nextGroups[id] = { ...g, children: g.children.filter((cid) => !memberIds.includes(cid)) };
       });
+      let nextRoot = s.rootOrder.filter((id) => !memberIds.includes(id));
+
       nextGroups[gid] = {
         id: gid,
         name: `Group ${Object.keys(s.groups).length + 1}`,
-        parentId: null,
+        parentId,
         children: orderedMembers,
         transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1 },
       };
 
+      memberIds.forEach((id) => {
+        if (nextGroups[id]) nextGroups[id] = { ...nextGroups[id], parentId: gid };
+      });
+
+      const inserted = insertNodeInParent(nextGroups, nextRoot, parentId, gid, beforeId);
+      nextGroups = inserted.groups;
+      nextRoot = inserted.rootOrder;
+
       let nextElements = s.elements.map((e) =>
         memberIds.includes(e.id) ? { ...e, parentId: gid } : e,
       );
-      nextElements = reassignGlobalZ(nextElements, nextGroups);
+      nextElements = reassignGlobalZ(nextElements, nextGroups, nextRoot);
 
       return {
         elements: nextElements,
         groups: nextGroups,
+        rootOrder: nextRoot,
         selectedIds: [gid],
         selectionAnchorId: gid,
       };
@@ -391,15 +492,37 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => {
       const group = s.groups[groupId];
       if (!group) return {};
+      const parentId = group.parentId;
+      const siblings = parentId && s.groups[parentId] ? s.groups[parentId].children : s.rootOrder;
+      const groupIndex = siblings.indexOf(groupId);
+      const afterId = groupIndex >= 0 ? siblings[groupIndex + 1] ?? null : null;
+
       const nextGroups = { ...s.groups };
       delete nextGroups[groupId];
 
-      let nextElements = s.elements.map((e) =>
-        e.parentId === groupId ? { ...e, parentId: group.parentId } : e,
-      );
-      nextElements = reassignGlobalZ(nextElements, nextGroups);
+      group.children.forEach((cid) => {
+        if (nextGroups[cid]) nextGroups[cid] = { ...nextGroups[cid], parentId };
+      });
 
-      // remove tracks/clips that targeted the group itself
+      let nextRoot = s.rootOrder.filter((id) => id !== groupId);
+      if (parentId && nextGroups[parentId]) {
+        nextGroups[parentId] = {
+          ...nextGroups[parentId],
+          children: nextGroups[parentId].children.filter((id) => id !== groupId),
+        };
+      }
+
+      group.children.forEach((cid) => {
+        const placed = insertNodeInParent(nextGroups, nextRoot, parentId, cid, afterId);
+        Object.assign(nextGroups, placed.groups);
+        nextRoot = placed.rootOrder;
+      });
+
+      let nextElements = s.elements.map((e) =>
+        e.parentId === groupId ? { ...e, parentId } : e,
+      );
+      nextElements = reassignGlobalZ(nextElements, nextGroups, nextRoot);
+
       const nextTracks = { ...s.animation.tracks };
       const nextClips = { ...s.animation.clips };
       Object.values(nextClips).forEach((clip) => {
@@ -414,15 +537,31 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       return {
         elements: nextElements,
         groups: nextGroups,
+        rootOrder: nextRoot,
         animation: { ...s.animation, tracks: nextTracks, clips: nextClips },
-        selectedIds: group.children.filter((cid) => !nextGroups[cid]),
+        selectedIds: group.children,
         selectionAnchorId: group.children[0] ?? null,
-        enteredGroupId: s.enteredGroupId === groupId ? null : s.enteredGroupId,
+        enteredGroupId: s.enteredGroupId === groupId ? parentId : s.enteredGroupId,
       };
     }),
 
+  ungroupSelection: () => {
+    const { selectedIds, groups, ungroup } = get();
+    const groupId = selectedIds.find((id) => groups[id]);
+    if (groupId) ungroup(groupId);
+  },
+
   enterGroup: (groupId) => set({ enteredGroupId: groupId }),
-  exitGroup: () => set({ enteredGroupId: null }),
+  exitGroup: () =>
+    set((s) => {
+      if (!s.enteredGroupId) return {};
+      const leaving = s.enteredGroupId;
+      return {
+        enteredGroupId: s.groups[leaving]?.parentId ?? null,
+        selectedIds: [leaving],
+        selectionAnchorId: leaving,
+      };
+    }),
 
   applyEffect: (targetId, effectId) => {
     const state = get();
@@ -763,12 +902,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const current: DocSnapshot = {
       elements: get().elements,
       groups: get().groups,
+      rootOrder: get().rootOrder,
       animation: get().animation,
     };
     timeTraveling = true;
     set({
       elements: prevSnap.elements,
       groups: prevSnap.groups,
+      rootOrder: prevSnap.rootOrder,
       animation: prevSnap.animation,
       past: past.slice(0, -1),
       future: [current, ...get().future],
@@ -783,12 +924,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const current: DocSnapshot = {
       elements: get().elements,
       groups: get().groups,
+      rootOrder: get().rootOrder,
       animation: get().animation,
     };
     timeTraveling = true;
     set({
       elements: nextSnap.elements,
       groups: nextSnap.groups,
+      rootOrder: nextSnap.rootOrder,
       animation: nextSnap.animation,
       future: future.slice(1),
       past: [...get().past, current],
@@ -810,6 +953,7 @@ useEditorStore.subscribe((state, prev) => {
   const docChanged =
     state.elements !== prev.elements ||
     state.groups !== prev.groups ||
+    state.rootOrder !== prev.rootOrder ||
     state.animation !== prev.animation;
   if (!docChanged) return;
 
@@ -823,6 +967,7 @@ useEditorStore.subscribe((state, prev) => {
   const snap: DocSnapshot = {
     elements: prev.elements,
     groups: prev.groups,
+    rootOrder: prev.rootOrder,
     animation: prev.animation,
   };
   useEditorStore.setState((s) => ({ past: [...s.past, snap].slice(-100), future: [] }));

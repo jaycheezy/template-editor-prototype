@@ -2,14 +2,22 @@ import { useCallback, useMemo, useRef } from 'react';
 import { Box, Flex } from '@chakra-ui/react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
+import { groupDescendantAabb, type Rect } from '../../lib/bounds';
 import { isEffectivelyLocked, renderScene, type RenderedElement } from '../../lib/engine';
 import { applyTextCase } from '../../lib/format';
 import { buildLayerRows, buildSiblingOrder, sortElementsForPaint } from '../../lib/layers';
-import { expandSelectionToElementIds, layerListElementIds } from '../../lib/selection';
+import {
+  isInEnteredScope,
+  layerListElementIds,
+  selectableAtScope,
+  shouldShowGroupBoundingBox,
+} from '../../lib/selection';
 import { CANVAS } from '../../data/mockTemplate';
 import type { AdElement } from '../../types';
 
 const SCALE = 1.6;
+const SELECTION_STROKE = '1.5px solid rgb(0, 92, 255)';
+const SELECTION_FILL = 'rgba(51, 68, 238, 0.10)';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
@@ -17,12 +25,14 @@ function ElementView({
   rendered,
   selected,
   canMove,
+  inert,
   onPointerDown,
   onDoubleClick,
 }: {
   rendered: RenderedElement;
   selected: boolean;
   canMove: boolean;
+  inert?: boolean;
   onPointerDown: (e: React.PointerEvent, el: AdElement) => void;
   onDoubleClick: (e: React.MouseEvent, el: AdElement) => void;
 }) {
@@ -36,8 +46,9 @@ function ElementView({
     zIndex: element.position.z,
     transform: `rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
     transformOrigin: 'center center',
-    opacity: transform.opacity,
-    cursor: element.locked || !canMove ? 'default' : 'move',
+    opacity: inert ? transform.opacity * 0.35 : transform.opacity,
+    cursor: inert || element.locked || !canMove ? 'default' : 'move',
+    pointerEvents: inert ? 'none' : 'auto',
   };
 
   let content: React.ReactNode;
@@ -89,8 +100,8 @@ function ElementView({
           style={{
             position: 'absolute',
             inset: -2,
-            border: '1.5px solid rgb(0, 92, 255)',
-            background: 'rgba(51, 68, 238, 0.10)',
+            border: SELECTION_STROKE,
+            background: SELECTION_FILL,
             pointerEvents: 'none',
           }}
         />
@@ -99,12 +110,59 @@ function ElementView({
   );
 }
 
+function GroupBounds({
+  groupId,
+  rect,
+  canMove,
+  locked,
+  onPointerDown,
+  onDoubleClick,
+}: {
+  groupId: string;
+  rect: Rect;
+  canMove: boolean;
+  locked: boolean;
+  onPointerDown: (e: React.PointerEvent, groupId: string) => void;
+  onDoubleClick: (e: React.MouseEvent, groupId: string) => void;
+}) {
+  const edgeCursor = locked || !canMove ? 'default' : 'move';
+  const edge: React.CSSProperties = {
+    position: 'absolute',
+    pointerEvents: 'auto',
+    cursor: edgeCursor,
+  };
+  return (
+    <div
+      data-group-bounds={groupId}
+      onDoubleClick={(e) => onDoubleClick(e, groupId)}
+      style={{
+        position: 'absolute',
+        left: rect.x,
+        top: rect.y,
+        width: rect.width,
+        height: rect.height,
+        border: SELECTION_STROKE,
+        background: SELECTION_FILL,
+        pointerEvents: 'none',
+        zIndex: 10000,
+      }}
+    >
+      <div style={{ ...edge, left: -4, right: -4, top: -4, height: 8 }} onPointerDown={(e) => onPointerDown(e, groupId)} />
+      <div style={{ ...edge, left: -4, right: -4, bottom: -4, height: 8 }} onPointerDown={(e) => onPointerDown(e, groupId)} />
+      <div style={{ ...edge, top: 4, bottom: 4, left: -4, width: 8 }} onPointerDown={(e) => onPointerDown(e, groupId)} />
+      <div style={{ ...edge, top: 4, bottom: 4, right: -4, width: 8 }} onPointerDown={(e) => onPointerDown(e, groupId)} />
+    </div>
+  );
+}
+
 export default function Canvas() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
+  const rootOrder = useEditorStore((s) => s.rootOrder);
   const animation = useEditorStore((s) => s.animation);
   const currentTime = useEditorStore((s) => s.currentTime);
   const selectedIds = useEditorStore((s) => s.selectedIds);
+  const enteredGroupId = useEditorStore((s) => s.enteredGroupId);
   const select = useEditorStore((s) => s.select);
   const moveSelectionBy = useEditorStore((s) => s.moveSelectionBy);
   const resizeElement = useEditorStore((s) => s.resizeElement);
@@ -118,13 +176,8 @@ export default function Canvas() {
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
   const elementRangeOrder = useMemo(
-    () => layerListElementIds(buildLayerRows(elements, groups)),
-    [elements, groups],
-  );
-
-  const highlightedElements = useMemo(
-    () => expandSelectionToElementIds(selectedIds, groups),
-    [selectedIds, groups],
+    () => layerListElementIds(buildLayerRows(elements, groups, rootOrder)),
+    [elements, groups, rootOrder],
   );
 
   const rendered = useMemo(
@@ -133,7 +186,7 @@ export default function Canvas() {
   );
 
   const paintOrder = useMemo(() => {
-    const siblingOrder = buildSiblingOrder(elements, groups);
+    const siblingOrder = buildSiblingOrder(elements, groups, rootOrder);
     const byId = new Map(rendered.map((r) => [r.element.id, r]));
     return sortElementsForPaint(
       rendered.map((r) => r.element),
@@ -142,24 +195,21 @@ export default function Canvas() {
       .map((el) => byId.get(el.id))
       .filter((r): r is RenderedElement => Boolean(r))
       .filter((r) => !r.hidden);
-  }, [rendered, elements, groups]);
+  }, [rendered, elements, groups, rootOrder]);
 
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent, el: AdElement) => {
-      e.stopPropagation();
-      const alreadySelected = highlightedElements.has(el.id);
-      if (!alreadySelected) {
-        select(el.id, {
-          additive: canLayout && (e.metaKey || e.ctrlKey),
-          range: canLayout && e.shiftKey,
-          rangeOrder: elementRangeOrder,
-        });
-      }
+  const groupBoxes = useMemo(() => {
+    if (!canGroup) return [];
+    return selectedIds
+      .filter((id) => shouldShowGroupBoundingBox(id, selectedIds, enteredGroupId, groups, elements))
+      .map((id) => {
+        const rect = groupDescendantAabb(id, rendered, groups);
+        return rect ? { id, rect, locked: Boolean(groups[id]?.locked) } : null;
+      })
+      .filter((box): box is { id: string; rect: Rect; locked: boolean } => Boolean(box));
+  }, [canGroup, selectedIds, enteredGroupId, groups, elements, rendered]);
 
-      if (!canLayout || isEffectivelyLocked(el, groups)) return;
-
-      // Drag the whole current selection (or just this element if it was not selected).
-      const movingIds = alreadySelected && selectedIds.length > 0 ? selectedIds : [el.id];
+  const startMoveDrag = useCallback(
+    (movingIds: string[], e: React.PointerEvent) => {
       dragRef.current = { startX: e.clientX, startY: e.clientY };
       let lastX = e.clientX;
       let lastY = e.clientY;
@@ -179,13 +229,86 @@ export default function Canvas() {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [canLayout, elementRangeOrder, groups, highlightedElements, moveSelectionBy, select, selectedIds],
+    [moveSelectionBy],
+  );
+
+  const hitTargetId = useCallback(
+    (el: AdElement) =>
+      canGroup ? selectableAtScope(el.id, enteredGroupId, groups, elements) : el.id,
+    [canGroup, enteredGroupId, groups, elements],
+  );
+
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent, el: AdElement) => {
+      e.stopPropagation();
+      if (canGroup && !isInEnteredScope(el.id, enteredGroupId, groups, elements)) return;
+
+      const hitId = hitTargetId(el);
+      const alreadySelected = selectedIds.includes(hitId);
+      if (!alreadySelected) {
+        select(hitId, {
+          additive: canLayout && (e.metaKey || e.ctrlKey),
+          range: canLayout && e.shiftKey,
+          rangeOrder: elementRangeOrder,
+        });
+      }
+
+      if (!canLayout) return;
+      if (groups[hitId]?.locked) return;
+      const hitEl = elements.find((item) => item.id === hitId);
+      if (hitEl && isEffectivelyLocked(hitEl, groups)) return;
+
+      const movingIds = alreadySelected && selectedIds.length > 0 ? selectedIds : [hitId];
+      startMoveDrag(movingIds, e);
+    },
+    [
+      canGroup,
+      canLayout,
+      elementRangeOrder,
+      elements,
+      enteredGroupId,
+      groups,
+      hitTargetId,
+      select,
+      selectedIds,
+      startMoveDrag,
+    ],
   );
 
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent, el: AdElement) => {
       e.stopPropagation();
-      if (canGroup && el.parentId) enterGroup(el.parentId);
+      if (!canGroup) return;
+      const hitId = hitTargetId(el);
+      if (!groups[hitId]) return;
+      const innerId = selectableAtScope(el.id, hitId, groups, elements);
+      enterGroup(hitId);
+      select(innerId);
+    },
+    [canGroup, elements, enterGroup, groups, hitTargetId, select],
+  );
+
+  const handleGroupBoxPointerDown = useCallback(
+    (e: React.PointerEvent, groupId: string) => {
+      e.stopPropagation();
+      const alreadySelected = selectedIds.includes(groupId);
+      if (!alreadySelected) {
+        select(groupId, {
+          additive: canLayout && (e.metaKey || e.ctrlKey),
+        });
+      }
+      if (!canLayout || groups[groupId]?.locked) return;
+      const movingIds = alreadySelected && selectedIds.length > 0 ? selectedIds : [groupId];
+      startMoveDrag(movingIds, e);
+    },
+    [canLayout, groups, select, selectedIds, startMoveDrag],
+  );
+
+  const handleGroupBoxDoubleClick = useCallback(
+    (e: React.MouseEvent, groupId: string) => {
+      e.stopPropagation();
+      if (!canGroup) return;
+      enterGroup(groupId);
     },
     [canGroup, enterGroup],
   );
@@ -247,7 +370,7 @@ export default function Canvas() {
       width: 8,
       height: 8,
       background: 'white',
-      border: '1.5px solid rgb(0, 92, 255)',
+      border: SELECTION_STROKE,
       borderRadius: 2,
       ...map[corner],
     };
@@ -286,10 +409,23 @@ export default function Canvas() {
             <ElementView
               key={r.element.id}
               rendered={r}
-              selected={highlightedElements.has(r.element.id)}
+              selected={selectedIds.includes(r.element.id)}
               canMove={canLayout}
+              inert={canGroup && !isInEnteredScope(r.element.id, enteredGroupId, groups, elements)}
               onPointerDown={handlePointerDown}
               onDoubleClick={handleDoubleClick}
+            />
+          ))}
+
+          {groupBoxes.map((box) => (
+            <GroupBounds
+              key={box.id}
+              groupId={box.id}
+              rect={box.rect}
+              canMove={canLayout}
+              locked={box.locked}
+              onPointerDown={handleGroupBoxPointerDown}
+              onDoubleClick={handleGroupBoxDoubleClick}
             />
           ))}
 

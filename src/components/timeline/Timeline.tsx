@@ -16,7 +16,7 @@ import {
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { sortKeyframes } from '../../lib/engine';
-import { buildLayerRows, elementsInGroupOrder, sortElementsForLayerList, buildSiblingOrder } from '../../lib/layers';
+import { buildLayerRows, sortElementsForLayerList, buildSiblingOrder } from '../../lib/layers';
 import { layerListSelectableIds } from '../../lib/selection';
 import { PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
 import { formatTime } from '../../lib/format';
@@ -64,6 +64,7 @@ function Ruler({ duration, ppms }: { duration: number; ppms: number }) {
 export default function Timeline() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
+  const rootOrder = useEditorStore((s) => s.rootOrder);
   const animation = useEditorStore((s) => s.animation);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const select = useEditorStore((s) => s.select);
@@ -128,7 +129,7 @@ export default function Timeline() {
 
   const rows: Row[] = useMemo(() => {
     if (!canGroup) {
-      const order = buildSiblingOrder(elements, groups);
+      const order = buildSiblingOrder(elements, groups, rootOrder);
       return sortElementsForLayerList(elements, order).map((el) => ({
         id: el.id,
         name: el.name,
@@ -138,28 +139,18 @@ export default function Timeline() {
       }));
     }
     const byId = new Map(elements.map((e) => [e.id, e]));
-    const result: Row[] = [];
-    Object.values(groups)
-      .filter((g) => !g.parentId)
-      .forEach((g) => {
-        result.push({ id: g.id, name: g.name, isGroup: true, depth: 0, entries: entriesFor(g.id) });
-        if (!g.collapsed) {
-          elementsInGroupOrder(g.children, byId).forEach((el) => {
-            result.push({ id: el.id, name: el.name, isGroup: false, depth: 1, entries: entriesFor(el.id) });
-          });
-        }
-      });
-    elements
-      .filter((e) => !e.parentId)
-      .forEach((el) => {
-        result.push({ id: el.id, name: el.name, isGroup: false, depth: 0, entries: entriesFor(el.id) });
-      });
-    return result;
-  }, [elements, groups, entriesFor, canGroup]);
+    return buildLayerRows(elements, groups, rootOrder).map((row) => ({
+      id: row.id,
+      name: row.kind === 'group' ? row.name : byId.get(row.id)?.name ?? row.id,
+      isGroup: row.kind === 'group',
+      depth: row.depth,
+      entries: entriesFor(row.id),
+    }));
+  }, [elements, groups, rootOrder, entriesFor, canGroup]);
 
   const selectableIds = useMemo(
-    () => layerListSelectableIds(buildLayerRows(elements, groups)),
-    [elements, groups],
+    () => layerListSelectableIds(buildLayerRows(elements, groups, rootOrder)),
+    [elements, groups, rootOrder],
   );
 
   const handleRowSelect = useCallback(

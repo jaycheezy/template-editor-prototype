@@ -11,6 +11,7 @@ import {
   MenuList,
   Portal,
   Text,
+  useToast,
 } from '@chakra-ui/react';
 import { FaShapes } from 'react-icons/fa';
 import {
@@ -36,6 +37,7 @@ import {
   dropTargetAtIndex,
   sortElementsForLayerList,
   buildSiblingOrder,
+  wouldCreateCycle,
   type LayerDropTarget,
   type LayerRow,
 } from '../../lib/layers';
@@ -64,19 +66,6 @@ const Z_ACTIONS: { op: ZOrderOp; label: string }[] = [
   { op: 'backward', label: 'Send backward' },
   { op: 'back', label: 'Send to back' },
 ];
-
-function ElementRowContent({ el }: { el: AdElement }) {
-  return (
-    <>
-      <Box w="14px" flexShrink={0} />
-      <Icon as={elementIcon(el.type)} boxSize={3.5} opacity={0.85} flexShrink={0} />
-      <Text fontSize="13px" noOfLines={1} flex={1}>
-        {el.name}
-      </Text>
-      <Box w={6} flexShrink={0} />
-    </>
-  );
-}
 
 function DropPlaceholder({ depth }: { depth: number }) {
   return (
@@ -120,8 +109,8 @@ function VisibilityLockActions({
         h={5}
         variant="ghost"
         color={hidden ? 'mcBlue.500' : 'gray.400'}
-        visibility={alwaysShow || hidden ? 'visible' : 'hidden'}
-        _groupHover={{ visibility: 'visible' }}
+        display={alwaysShow || hidden ? 'inline-flex' : 'none'}
+        _groupHover={{ display: 'inline-flex' }}
         onClick={(e) => {
           e.stopPropagation();
           onToggleHidden();
@@ -135,8 +124,8 @@ function VisibilityLockActions({
         h={5}
         variant="ghost"
         color={locked ? 'mcBlue.500' : 'gray.400'}
-        visibility={alwaysShow || locked ? 'visible' : 'hidden'}
-        _groupHover={{ visibility: 'visible' }}
+        display={alwaysShow || locked ? 'inline-flex' : 'none'}
+        _groupHover={{ display: 'inline-flex' }}
         onClick={(e) => {
           e.stopPropagation();
           onToggleLocked();
@@ -154,6 +143,7 @@ function ElementRow({
   selected,
   canLayout,
   canAuthor,
+  flatReorder,
   onSelect,
   onDragStart,
 }: {
@@ -164,6 +154,7 @@ function ElementRow({
   selected: boolean;
   canLayout: boolean;
   canAuthor: boolean;
+  flatReorder: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onDragStart: (elementId: string, e: React.PointerEvent) => void;
 }) {
@@ -174,6 +165,7 @@ function ElementRow({
   const reorderElementZ = useEditorStore((s) => s.reorderElementZ);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(el.name);
+  const [orderMenuOpen, setOrderMenuOpen] = useState(false);
 
   if (isPlaceholder) {
     return <DropPlaceholder depth={depth} />;
@@ -185,6 +177,8 @@ function ElementRow({
     else setDraft(el.name);
   };
 
+  const chromeW = draggable ? '14px' : 0;
+
   return (
     <HStack
       role="group"
@@ -193,24 +187,25 @@ function ElementRow({
       py="5px"
       spacing={1}
       cursor="pointer"
-      bg={selected ? 'mcBlue.50' : 'white'}
+      bg={selected ? 'mcBlue.50' : orderMenuOpen ? mc.secondary : 'white'}
       color={selected ? 'mcBlue.600' : 'gray.700'}
       opacity={el.hidden ? 0.45 : 1}
       borderTopWidth="1px"
       borderBottomWidth="1px"
-      borderColor="transparent"
+      borderColor={orderMenuOpen ? 'mcBlue.100' : 'transparent'}
       transition="background 0.12s ease, border-color 0.12s ease"
       _hover={{ bg: mc.secondary, borderColor: 'mcBlue.100' }}
       onClick={(e) => onSelect(e)}
     >
       <Box
-        w="14px"
+        w={orderMenuOpen ? chromeW : 0}
+        minW={orderMenuOpen ? chromeW : 0}
+        overflow="hidden"
         flexShrink={0}
         display="flex"
         alignItems="center"
         justifyContent="center"
-        visibility="hidden"
-        _groupHover={{ visibility: draggable ? 'visible' : 'hidden' }}
+        _groupHover={{ w: chromeW, minW: chromeW }}
         onPointerDown={(e) => {
           if (!draggable) return;
           e.stopPropagation();
@@ -242,6 +237,7 @@ function ElementRow({
           fontSize="13px"
           noOfLines={1}
           flex={1}
+          minW={0}
           onDoubleClick={(e) => {
             if (!canAuthor) return;
             e.stopPropagation();
@@ -254,7 +250,12 @@ function ElementRow({
       )}
 
       {canLayout && (
-        <Menu placement="bottom-end" isLazy>
+        <Menu
+          placement="bottom-end"
+          isLazy
+          onOpen={() => setOrderMenuOpen(true)}
+          onClose={() => setOrderMenuOpen(false)}
+        >
           <MenuButton
             as={IconButton}
             aria-label="Layer order"
@@ -264,14 +265,14 @@ function ElementRow({
             h={5}
             variant="ghost"
             color="gray.400"
-            visibility="hidden"
-            _groupHover={{ visibility: 'visible' }}
+            display={orderMenuOpen ? 'inline-flex' : 'none'}
+            _groupHover={{ display: 'inline-flex' }}
             onClick={(e) => e.stopPropagation()}
           />
           <Portal>
             <MenuList minW="160px">
               {Z_ACTIONS.map((a) => (
-                <MenuItem key={a.op} fontSize="13px" onClick={() => reorderElementZ(el.id, a.op)}>
+                <MenuItem key={a.op} fontSize="13px" onClick={() => reorderElementZ(el.id, a.op, { flat: flatReorder })}>
                   {a.label}
                 </MenuItem>
               ))}
@@ -284,11 +285,12 @@ function ElementRow({
         hidden={el.hidden}
         locked={el.locked}
         canEdit={canLayout}
+        alwaysShow={orderMenuOpen}
         onToggleHidden={() => toggleElementHidden(el.id)}
         onToggleLocked={() => toggleElementLocked(el.id)}
       />
 
-      {canAuthor && (
+      {!el.locked && (
         <IconButton
           aria-label={`Delete ${el.name}`}
           icon={<LuTrash2 size={14} />}
@@ -297,9 +299,9 @@ function ElementRow({
           h={5}
           variant="ghost"
           color={mc.error}
-          visibility="hidden"
+          display={orderMenuOpen ? 'inline-flex' : 'none'}
           _hover={{ bg: 'transparent', color: mc.error }}
-          _groupHover={{ visibility: 'visible' }}
+          _groupHover={{ display: 'inline-flex' }}
           onClick={(e) => {
             e.stopPropagation();
             deleteElement(el.id);
@@ -310,7 +312,21 @@ function ElementRow({
   );
 }
 
-function DragGhost({ el, depth, x, y, width }: { el: AdElement; depth: number; x: number; y: number; width: number }) {
+function DragGhost({
+  name,
+  icon,
+  depth,
+  x,
+  y,
+  width,
+}: {
+  name: string;
+  icon: IconType;
+  depth: number;
+  x: number;
+  y: number;
+  width: number;
+}) {
   return (
     <Portal>
       <Box
@@ -327,7 +343,12 @@ function DragGhost({ el, depth, x, y, width }: { el: AdElement; depth: number; x
         bg="white"
       >
         <HStack pl={`${4 + depth * 16}px`} pr={1} py="5px" spacing={1} color="mcBlue.600" bg={mc.secondary}>
-          <ElementRowContent el={el} />
+          <Box w="14px" flexShrink={0} />
+          <Icon as={icon} boxSize={3.5} opacity={0.85} flexShrink={0} />
+          <Text fontSize="13px" noOfLines={1} flex={1}>
+            {name}
+          </Text>
+          <Box w={6} flexShrink={0} />
         </HStack>
       </Box>
     </Portal>
@@ -338,18 +359,24 @@ function GroupRow({
   row,
   selected,
   canEdit,
+  draggable,
   onSelect,
   onToggle,
   onEnter,
+  onDragStart,
   dropHighlight,
+  dropInvalid,
 }: {
   row: Extract<LayerRow, { kind: 'group' }>;
   selected: boolean;
   canEdit: boolean;
+  draggable: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onToggle: () => void;
   onEnter: () => void;
+  onDragStart: (groupId: string, e: React.PointerEvent) => void;
   dropHighlight: boolean;
+  dropInvalid: boolean;
 }) {
   const groups = useEditorStore((s) => s.groups);
   const renameGroup = useEditorStore((s) => s.renameGroup);
@@ -359,6 +386,7 @@ function GroupRow({
   const group = groups[row.id];
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(row.name);
+  const chromeW = draggable ? '14px' : 0;
 
   const commit = () => {
     setEditing(false);
@@ -369,25 +397,41 @@ function GroupRow({
   return (
     <HStack
       role="group"
-      pl="8px"
+      pl={`${4 + row.depth * 16}px`}
       pr={1}
       py="5px"
       spacing={1}
       cursor="pointer"
       transition="background 0.12s ease, outline 0.12s ease"
-      bg={dropHighlight ? 'mcBlue.50' : selected ? 'mcBlue.50' : 'transparent'}
+      bg={dropInvalid ? 'red.50' : dropHighlight ? 'mcBlue.50' : selected ? 'mcBlue.50' : 'transparent'}
       color={selected ? 'mcBlue.600' : 'gray.700'}
       opacity={group?.hidden ? 0.45 : 1}
-      outline={dropHighlight ? '1px solid' : undefined}
-      outlineColor={dropHighlight ? 'mcBlue.200' : undefined}
-      _hover={{ bg: selected || dropHighlight ? 'mcBlue.50' : 'gray.50' }}
+      outline={dropInvalid ? '1px solid' : dropHighlight ? '1px solid' : undefined}
+      outlineColor={dropInvalid ? 'red.300' : dropHighlight ? 'mcBlue.200' : undefined}
+      _hover={{ bg: selected || dropHighlight || dropInvalid ? undefined : 'gray.50' }}
       onClick={(e) => onSelect(e)}
       onDoubleClick={(e) => {
         e.stopPropagation();
         onEnter();
       }}
     >
-      <Box w="14px" flexShrink={0} />
+      <Box
+        w={0}
+        minW={0}
+        overflow="hidden"
+        flexShrink={0}
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        _groupHover={{ w: chromeW, minW: chromeW }}
+        onPointerDown={(e) => {
+          if (!draggable) return;
+          e.stopPropagation();
+          onDragStart(row.id, e);
+        }}
+      >
+        <Icon as={LuGripVertical} boxSize={3.5} color="gray.400" cursor="grab" _active={{ cursor: 'grabbing' }} />
+      </Box>
       <Icon
         as={row.collapsed ? LuChevronRight : LuChevronDown}
         boxSize={3.5}
@@ -420,6 +464,7 @@ function GroupRow({
           fontWeight={600}
           noOfLines={1}
           flex={1}
+          minW={0}
           onDoubleClick={(e) => {
             if (!canEdit) return;
             e.stopPropagation();
@@ -439,8 +484,8 @@ function GroupRow({
           h={5}
           variant="ghost"
           color="gray.400"
-          visibility="hidden"
-          _groupHover={{ visibility: 'visible' }}
+          display="none"
+          _groupHover={{ display: 'inline-flex' }}
           onClick={(e) => {
             e.stopPropagation();
             ungroup(row.id);
@@ -459,7 +504,7 @@ function GroupRow({
 }
 
 interface DragGhostState {
-  elementId: string;
+  nodeId: string;
   offsetX: number;
   offsetY: number;
   width: number;
@@ -470,6 +515,7 @@ interface DragGhostState {
 export default function LayerTree() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
+  const rootOrder = useEditorStore((s) => s.rootOrder);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const select = useEditorStore((s) => s.select);
   const toggleGroupCollapsed = useEditorStore((s) => s.toggleGroupCollapsed);
@@ -478,6 +524,7 @@ export default function LayerTree() {
   const canLayout = usePhase('layout');
   const canAuthor = usePhase('author');
   const canGroup = usePhase('groups');
+  const toast = useToast();
 
   const listRef = useRef<HTMLDivElement>(null);
   const baseRowsRef = useRef<LayerRow[]>([]);
@@ -488,17 +535,16 @@ export default function LayerTree() {
 
   const byId = useMemo(() => new Map(elements.map((e) => [e.id, e])), [elements]);
 
-  // When grouping is off, present a flat list of all elements (groups flattened away).
   const rows = useMemo<LayerRow[]>(() => {
-    if (canGroup) return buildLayerRows(elements, groups);
-    const order = buildSiblingOrder(elements, groups);
+    if (canGroup) return buildLayerRows(elements, groups, rootOrder);
+    const order = buildSiblingOrder(elements, groups, rootOrder);
     return sortElementsForLayerList(elements, order).map((el) => ({
       kind: 'element' as const,
       id: el.id,
       parentId: null,
       depth: 0,
     }));
-  }, [elements, groups, canGroup]);
+  }, [elements, groups, rootOrder, canGroup]);
 
   const selectableIds = useMemo(() => layerListSelectableIds(rows), [rows]);
 
@@ -517,10 +563,14 @@ export default function LayerTree() {
     baseRowsRef.current = rows;
   }, [rows]);
 
+  const invalidGroupDrop = Boolean(
+    draggingId && groupDropId && wouldCreateCycle(groups, draggingId, groupDropId),
+  );
+
   const displayRows = useMemo(() => {
     if (!draggingId || dropIndex === null) return rows;
-    return buildPreviewRows(rows, draggingId, dropIndex, groupDropId);
-  }, [rows, draggingId, dropIndex, groupDropId]);
+    return buildPreviewRows(rows, draggingId, dropIndex, invalidGroupDrop ? null : groupDropId);
+  }, [rows, draggingId, dropIndex, groupDropId, invalidGroupDrop]);
 
   const resolveDropIndex = useCallback((clientY: number): number => {
     const container = listRef.current;
@@ -547,8 +597,11 @@ export default function LayerTree() {
   }, []);
 
   const finishDrag = useCallback(
-    (elementId: string, target: LayerDropTarget) => {
-      moveElementLayer(elementId, target);
+    (nodeId: string, target: LayerDropTarget) => {
+      const error = moveElementLayer(nodeId, target, { flat: !canGroup });
+      if (error) {
+        toast({ status: 'warning', title: error, duration: 2500, isClosable: true });
+      }
       setDraggingId(null);
       setDropIndex(null);
       setGroupDropId(null);
@@ -556,13 +609,14 @@ export default function LayerTree() {
       document.body.style.removeProperty('user-select');
       document.body.style.removeProperty('cursor');
     },
-    [moveElementLayer],
+    [canGroup, moveElementLayer, toast],
   );
 
   const startDrag = useCallback(
-    (elementId: string, e: React.PointerEvent) => {
-      const el = byId.get(elementId);
-      if (!el || el.locked) return;
+    (nodeId: string, e: React.PointerEvent) => {
+      const el = byId.get(nodeId);
+      const group = groups[nodeId];
+      if (el?.locked || group?.locked) return;
       const rowNode = (e.currentTarget as HTMLElement).closest('[data-layer-row]') as HTMLElement | null;
       const rowRect = rowNode?.getBoundingClientRect();
       if (!rowRect) return;
@@ -575,10 +629,10 @@ export default function LayerTree() {
       const offsetY = e.clientY - rowRect.top;
       const initialIndex = resolveDropIndex(e.clientY);
 
-      setDraggingId(elementId);
+      setDraggingId(nodeId);
       setDropIndex(initialIndex);
       setGroupDropId(null);
-      setGhost({ elementId, offsetX, offsetY, width: rowRect.width, x: rowRect.left, y: rowRect.top });
+      setGhost({ nodeId, offsetX, offsetY, width: rowRect.width, x: rowRect.left, y: rowRect.top });
 
       const onMove = (ev: PointerEvent) => {
         const nextGroupDrop = canGroup ? resolveGroupDrop(ev.clientX, ev.clientY) : null;
@@ -591,30 +645,47 @@ export default function LayerTree() {
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         const baseRows = baseRowsRef.current;
-        const groupId = canGroup ? resolveGroupDrop(ev.clientX, ev.clientY) : null;
-        if (groupId) {
-          const groupRow = baseRows.find((r) => r.kind === 'group' && r.id === groupId);
-          finishDrag(elementId, {
-            parentId: groupId,
+        const hoverGroupId = canGroup ? resolveGroupDrop(ev.clientX, ev.clientY) : null;
+        if (hoverGroupId && hoverGroupId !== nodeId && !wouldCreateCycle(groups, nodeId, hoverGroupId)) {
+          const groupRow = baseRows.find((r) => r.kind === 'group' && r.id === hoverGroupId);
+          finishDrag(nodeId, {
+            parentId: hoverGroupId,
             beforeId: groupRow?.kind === 'group' ? groupRow.firstChildId : null,
           });
           return;
         }
+        if (hoverGroupId && wouldCreateCycle(groups, nodeId, hoverGroupId)) {
+          toast({
+            status: 'warning',
+            title: 'A group cannot contain itself',
+            duration: 2500,
+            isClosable: true,
+          });
+          setDraggingId(null);
+          setDropIndex(null);
+          setGroupDropId(null);
+          setGhost(null);
+          document.body.style.removeProperty('user-select');
+          document.body.style.removeProperty('cursor');
+          return;
+        }
         const index = resolveDropIndex(ev.clientY);
-        finishDrag(elementId, dropTargetAtIndex(baseRows, index));
+        finishDrag(nodeId, dropTargetAtIndex(baseRows, index));
       };
 
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [byId, canGroup, finishDrag, resolveDropIndex, resolveGroupDrop],
+    [byId, canGroup, finishDrag, groups, resolveDropIndex, resolveGroupDrop, toast],
   );
 
-  const ghostElement = ghost ? byId.get(ghost.elementId) : null;
+  const ghostNode = ghost
+    ? byId.get(ghost.nodeId) ?? groups[ghost.nodeId]
+    : null;
   const ghostDepth = useMemo(() => {
     if (!draggingId) return 0;
-    const previewRow = displayRows.find((r) => r.kind === 'element' && r.id === draggingId);
-    return previewRow?.kind === 'element' ? previewRow.depth : 0;
+    const previewRow = displayRows.find((r) => r.id === draggingId);
+    return previewRow?.depth ?? 0;
   }, [displayRows, draggingId]);
 
   return (
@@ -629,10 +700,13 @@ export default function LayerTree() {
                   row={row}
                   selected={selectedIds.includes(row.id)}
                   canEdit={canGroup}
+                  draggable={canLayout && !groups[row.id]?.locked && draggingId === null}
                   onSelect={(e) => handleSelect(row.id, e)}
                   onToggle={() => toggleGroupCollapsed(row.id)}
                   onEnter={() => enterGroup(row.id)}
-                  dropHighlight={draggingId !== null && groupDropId === row.id}
+                  onDragStart={startDrag}
+                  dropHighlight={draggingId !== null && groupDropId === row.id && !invalidGroupDrop}
+                  dropInvalid={draggingId !== null && groupDropId === row.id && invalidGroupDrop}
                 />
               </Box>
             ) : (
@@ -650,6 +724,7 @@ export default function LayerTree() {
                       selected={selectedIds.includes(el.id)}
                       canLayout={canLayout}
                       canAuthor={canAuthor}
+                      flatReorder={!canGroup}
                       onSelect={(e) => handleSelect(el.id, e)}
                       onDragStart={startDrag}
                     />
@@ -662,8 +737,15 @@ export default function LayerTree() {
         <Box data-layer-slot data-drop-index={displayRows.length} height="2px" />
       </Box>
 
-      {ghost && ghostElement && (
-        <DragGhost el={ghostElement} depth={ghostDepth} x={ghost.x} y={ghost.y} width={ghost.width} />
+      {ghost && ghostNode && (
+        <DragGhost
+          name={ghostNode.name}
+          icon={'type' in ghostNode ? elementIcon(ghostNode.type) : LuFolder}
+          depth={ghostDepth}
+          x={ghost.x}
+          y={ghost.y}
+          width={ghost.width}
+        />
       )}
     </>
   );

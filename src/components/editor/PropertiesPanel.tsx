@@ -375,6 +375,16 @@ function GroupControls({ groupId, canGroup }: { groupId: string; canGroup: boole
           onChange={(v) => updateGroupTransform(group.id, { rotation: v })}
         />
         <NumberField
+          label="Scale %"
+          value={group.transform.scaleX * 100}
+          isDisabled={!canGroup}
+          onChange={(v) =>
+            updateGroupTransform(group.id, { scaleX: v / 100, scaleY: v / 100 })
+          }
+        />
+      </HStack>
+      <HStack spacing={5}>
+        <NumberField
           label="Opacity %"
           value={group.transform.opacity * 100}
           isDisabled={!canGroup}
