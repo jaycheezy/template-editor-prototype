@@ -32,7 +32,7 @@ export const PHASES: PhaseMeta[] = [
     id: 'layout',
     label: 'Fix existing layout',
     short: 'Layout',
-    description: 'Move, lock/hide, reorder, and multi-select elements that are already on the canvas.',
+    description: 'Move, lock/hide, reorder, multi-select, and zoom/pan to work with off-canvas layers.',
     epic: 'ADSCM-1380',
     group: 'epic',
     requires: [],
@@ -117,6 +117,7 @@ export const PROTOTYPE_ORIGIN = 'https://template-editor-prototype.netlify.app';
 const EPIC_KEY_TO_PHASE: Record<string, PhaseId> = {
   '1371': 'presets',
   '1380': 'layout',
+  '1484': 'layout',
   '1386': 'author',
   '1392': 'groups',
   '1401': 'timeline',

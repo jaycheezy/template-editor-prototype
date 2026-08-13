@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef } from 'react';
-import { Box, Flex } from '@chakra-ui/react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Box, Flex, HStack, Icon, IconButton, Text } from '@chakra-ui/react';
+import { LuMinus, LuPlus } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { groupDescendantAabb, type Rect } from '../../lib/bounds';
@@ -12,12 +13,28 @@ import {
   selectableAtScope,
   shouldShowGroupBoundingBox,
 } from '../../lib/selection';
+import {
+  LEGACY_SCALE,
+  MAX_ZOOM,
+  MIN_ZOOM,
+  ZOOM_STEP,
+  centerPan,
+  clampZoom,
+  fitZoom,
+  zoomAtPoint,
+  type Pan,
+} from '../../lib/viewport';
 import { CANVAS } from '../../data/mockTemplate';
 import type { AdElement } from '../../types';
 
-const SCALE = 1.6;
 const SELECTION_STROKE = '1.5px solid rgb(0, 92, 255)';
 const SELECTION_FILL = 'rgba(51, 68, 238, 0.10)';
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
+}
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
 
@@ -26,6 +43,7 @@ function ElementView({
   selected,
   canMove,
   inert,
+  cursor,
   onPointerDown,
   onDoubleClick,
 }: {
@@ -33,6 +51,7 @@ function ElementView({
   selected: boolean;
   canMove: boolean;
   inert?: boolean;
+  cursor?: string;
   onPointerDown: (e: React.PointerEvent, el: AdElement) => void;
   onDoubleClick: (e: React.MouseEvent, el: AdElement) => void;
 }) {
@@ -47,7 +66,7 @@ function ElementView({
     transform: `rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
     transformOrigin: 'center center',
     opacity: inert ? transform.opacity * 0.35 : transform.opacity,
-    cursor: inert || element.locked || !canMove ? 'default' : 'move',
+    cursor: cursor ?? (inert || element.locked || !canMove ? 'default' : 'move'),
     pointerEvents: inert ? 'none' : 'auto',
   };
 
@@ -155,6 +174,66 @@ function GroupBounds({
   );
 }
 
+function ZoomHud({
+  zoom,
+  onZoomIn,
+  onZoomOut,
+  onFit,
+}: {
+  zoom: number;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onFit: () => void;
+}) {
+  return (
+    <HStack
+      position="absolute"
+      bottom="12px"
+      right="12px"
+      spacing={0}
+      bg="white"
+      borderRadius="8px"
+      boxShadow="0 2px 10px rgba(0,0,0,0.12)"
+      borderWidth="1px"
+      borderColor="gray.200"
+      px={1}
+      py={0.5}
+      zIndex={20}
+      onPointerDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
+    >
+      <IconButton
+        aria-label="Zoom out"
+        icon={<Icon as={LuMinus} boxSize={3.5} />}
+        size="xs"
+        variant="ghost"
+        isDisabled={zoom <= MIN_ZOOM}
+        onClick={onZoomOut}
+      />
+      <Text
+        fontSize="11px"
+        fontWeight={700}
+        color="gray.700"
+        minW="42px"
+        textAlign="center"
+        cursor="pointer"
+        title="Fit to frame"
+        onClick={onFit}
+      >
+        {Math.round(zoom * 100)}%
+      </Text>
+      <IconButton
+        aria-label="Zoom in"
+        icon={<Icon as={LuPlus} boxSize={3.5} />}
+        size="xs"
+        variant="ghost"
+        isDisabled={zoom >= MAX_ZOOM}
+        onClick={onZoomIn}
+      />
+    </HStack>
+  );
+}
+
 export default function Canvas() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
@@ -172,6 +251,121 @@ export default function Canvas() {
   const canLayout = usePhase('layout');
   const canAuthor = usePhase('author');
   const canGroup = usePhase('groups');
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(LEGACY_SCALE);
+  const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const [panning, setPanning] = useState(false);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
+
+  const viewScale = canLayout ? zoom : LEGACY_SCALE;
+
+  const centerAtZoom = useCallback((nextZoom: number) => {
+    const el = viewportRef.current;
+    if (!el) {
+      setZoom(nextZoom);
+      return;
+    }
+    setZoom(nextZoom);
+    setPan(centerPan(el.clientWidth, el.clientHeight, CANVAS.width, CANVAS.height, nextZoom));
+  }, []);
+
+  const fitToFrame = useCallback(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const nextZoom = fitZoom(el.clientWidth, el.clientHeight, CANVAS.width, CANVAS.height);
+    centerAtZoom(nextZoom);
+  }, [centerAtZoom]);
+
+  const zoomTowardCenter = useCallback((nextZoom: number) => {
+    const el = viewportRef.current;
+    if (!el) {
+      setZoom(clampZoom(nextZoom));
+      return;
+    }
+    const next = zoomAtPoint(zoomRef.current, panRef.current, nextZoom, {
+      x: el.clientWidth / 2,
+      y: el.clientHeight / 2,
+    });
+    setZoom(next.zoom);
+    setPan(next.pan);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!canLayout) return;
+    centerAtZoom(LEGACY_SCALE);
+  }, [canLayout, centerAtZoom]);
+
+  useEffect(() => {
+    if (!canLayout) return undefined;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (isTypingTarget(e.target)) return;
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setSpaceHeld(true);
+        return;
+      }
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey) return;
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        zoomTowardCenter(zoomRef.current + ZOOM_STEP);
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        zoomTowardCenter(zoomRef.current - ZOOM_STEP);
+      } else if (e.key === '0') {
+        e.preventDefault();
+        fitToFrame();
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') setSpaceHeld(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [canLayout, fitToFrame, zoomTowardCenter]);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el || !canLayout) return undefined;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      const next = zoomAtPoint(
+        zoomRef.current,
+        panRef.current,
+        zoomRef.current * (e.deltaY > 0 ? 0.92 : 1.08),
+        { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      );
+      setZoom(next.zoom);
+      setPan(next.pan);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [canLayout]);
+
+  const startPan = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    setPanning(true);
+    const origin = { x: e.clientX, y: e.clientY, panX: panRef.current.x, panY: panRef.current.y };
+    const onMove = (ev: PointerEvent) => {
+      setPan({ x: origin.panX + (ev.clientX - origin.x), y: origin.panY + (ev.clientY - origin.y) });
+    };
+    const onUp = () => {
+      setPanning(false);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
 
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -215,8 +409,8 @@ export default function Canvas() {
       let lastY = e.clientY;
       const onMove = (ev: PointerEvent) => {
         if (!dragRef.current) return;
-        const dx = (ev.clientX - lastX) / SCALE;
-        const dy = (ev.clientY - lastY) / SCALE;
+        const dx = (ev.clientX - lastX) / viewScale;
+        const dy = (ev.clientY - lastY) / viewScale;
         lastX = ev.clientX;
         lastY = ev.clientY;
         moveSelectionBy(movingIds, dx, dy);
@@ -229,7 +423,7 @@ export default function Canvas() {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [moveSelectionBy],
+    [moveSelectionBy, viewScale],
   );
 
   const hitTargetId = useCallback(
@@ -241,6 +435,10 @@ export default function Canvas() {
   const handlePointerDown = useCallback(
     (e: React.PointerEvent, el: AdElement) => {
       e.stopPropagation();
+      if (canLayout && (spaceHeld || e.button === 1)) {
+        startPan(e);
+        return;
+      }
       if (canGroup && !isInEnteredScope(el.id, enteredGroupId, groups, elements)) return;
 
       const hitId = hitTargetId(el);
@@ -271,7 +469,9 @@ export default function Canvas() {
       hitTargetId,
       select,
       selectedIds,
+      spaceHeld,
       startMoveDrag,
+      startPan,
     ],
   );
 
@@ -291,6 +491,10 @@ export default function Canvas() {
   const handleGroupBoxPointerDown = useCallback(
     (e: React.PointerEvent, groupId: string) => {
       e.stopPropagation();
+      if (canLayout && (spaceHeld || e.button === 1)) {
+        startPan(e);
+        return;
+      }
       const alreadySelected = selectedIds.includes(groupId);
       if (!alreadySelected) {
         select(groupId, {
@@ -301,7 +505,7 @@ export default function Canvas() {
       const movingIds = alreadySelected && selectedIds.length > 0 ? selectedIds : [groupId];
       startMoveDrag(movingIds, e);
     },
-    [canLayout, groups, select, selectedIds, startMoveDrag],
+    [canLayout, groups, select, selectedIds, spaceHeld, startMoveDrag, startPan],
   );
 
   const handleGroupBoxDoubleClick = useCallback(
@@ -331,8 +535,8 @@ export default function Canvas() {
       const ratio = startSize.width / Math.max(1, startSize.height);
 
       const onMove = (ev: PointerEvent) => {
-        let dx = (ev.clientX - startX) / SCALE;
-        let dy = (ev.clientY - startY) / SCALE;
+        let dx = (ev.clientX - startX) / viewScale;
+        let dy = (ev.clientY - startY) / viewScale;
         const left = corner === 'nw' || corner === 'sw';
         const top = corner === 'nw' || corner === 'ne';
         if (left) dx = -dx;
@@ -355,7 +559,7 @@ export default function Canvas() {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [primary, resizeElement],
+    [primary, resizeElement, viewScale],
   );
 
   const handleStyle = (corner: Corner): React.CSSProperties => {
@@ -376,81 +580,143 @@ export default function Canvas() {
     };
   };
 
+  const scene = (
+    <>
+      {paintOrder.map((r) => (
+        <ElementView
+          key={r.element.id}
+          rendered={r}
+          selected={selectedIds.includes(r.element.id)}
+          canMove={canLayout && !spaceHeld}
+          cursor={spaceHeld || panning ? (panning ? 'grabbing' : 'grab') : undefined}
+          inert={canGroup && !isInEnteredScope(r.element.id, enteredGroupId, groups, elements)}
+          onPointerDown={handlePointerDown}
+          onDoubleClick={handleDoubleClick}
+        />
+      ))}
+
+      {groupBoxes.map((box) => (
+        <GroupBounds
+          key={box.id}
+          groupId={box.id}
+          rect={box.rect}
+          canMove={canLayout && !spaceHeld}
+          locked={box.locked}
+          onPointerDown={handleGroupBoxPointerDown}
+          onDoubleClick={handleGroupBoxDoubleClick}
+        />
+      ))}
+
+      {canResize && primary && (
+        <Box
+          position="absolute"
+          pointerEvents="none"
+          style={{
+            left: primary.position.x,
+            top: primary.position.y,
+            width: primary.size.width,
+            height: primary.size.height,
+          }}
+        >
+          {(['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
+            <Box
+              key={c}
+              style={{ ...handleStyle(c), pointerEvents: 'auto' }}
+              onPointerDown={startResize(c)}
+            />
+          ))}
+        </Box>
+      )}
+    </>
+  );
+
+  if (!canLayout) {
+    return (
+      <Flex
+        flex={1}
+        align="center"
+        justify="center"
+        overflow="hidden"
+        onPointerDown={() => select(null)}
+        onDoubleClick={() => canGroup && exitGroup()}
+      >
+        <Box
+          position="relative"
+          boxShadow="0 8px 30px rgba(0,0,0,0.18)"
+          onPointerDown={(e) => e.stopPropagation()}
+          style={{
+            width: CANVAS.width * LEGACY_SCALE,
+            height: CANVAS.height * LEGACY_SCALE,
+          }}
+        >
+          <Box
+            position="absolute"
+            top={0}
+            left={0}
+            overflow="hidden"
+            style={{
+              width: CANVAS.width,
+              height: CANVAS.height,
+              transform: `scale(${LEGACY_SCALE})`,
+              transformOrigin: 'top left',
+            }}
+          >
+            {scene}
+          </Box>
+        </Box>
+      </Flex>
+    );
+  }
+
   return (
     <Flex
+      ref={viewportRef}
       flex={1}
-      align="center"
-      justify="center"
       overflow="hidden"
-      onPointerDown={() => select(null)}
+      position="relative"
+      bg="#d8dce3"
+      cursor={spaceHeld || panning ? (panning ? 'grabbing' : 'grab') : 'default'}
+      onPointerDown={(e) => {
+        if (spaceHeld || e.button === 1 || e.target === e.currentTarget) {
+          startPan(e);
+          if (e.target === e.currentTarget) select(null);
+          return;
+        }
+        select(null);
+      }}
       onDoubleClick={() => canGroup && exitGroup()}
     >
       <Box
-        position="relative"
-        boxShadow="0 8px 30px rgba(0,0,0,0.18)"
-        onPointerDown={(e) => e.stopPropagation()}
+        position="absolute"
+        top={0}
+        left={0}
         style={{
-          width: CANVAS.width * SCALE,
-          height: CANVAS.height * SCALE,
+          transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+          transformOrigin: '0 0',
+          willChange: 'transform',
         }}
       >
         <Box
-          position="absolute"
-          top={0}
-          left={0}
-          style={{
-            width: CANVAS.width,
-            height: CANVAS.height,
-            transform: `scale(${SCALE})`,
-            transformOrigin: 'top left',
+          position="relative"
+          width={`${CANVAS.width}px`}
+          height={`${CANVAS.height}px`}
+          overflow="visible"
+          bg="white"
+          boxShadow="0 0 0 1px rgba(0,0,0,0.22), 0 8px 30px rgba(0,0,0,0.18)"
+          onPointerDown={(e) => {
+            if (spaceHeld || e.button === 1) return;
+            e.stopPropagation();
           }}
         >
-          {paintOrder.map((r) => (
-            <ElementView
-              key={r.element.id}
-              rendered={r}
-              selected={selectedIds.includes(r.element.id)}
-              canMove={canLayout}
-              inert={canGroup && !isInEnteredScope(r.element.id, enteredGroupId, groups, elements)}
-              onPointerDown={handlePointerDown}
-              onDoubleClick={handleDoubleClick}
-            />
-          ))}
-
-          {groupBoxes.map((box) => (
-            <GroupBounds
-              key={box.id}
-              groupId={box.id}
-              rect={box.rect}
-              canMove={canLayout}
-              locked={box.locked}
-              onPointerDown={handleGroupBoxPointerDown}
-              onDoubleClick={handleGroupBoxDoubleClick}
-            />
-          ))}
-
-          {canResize && primary && (
-            <Box
-              position="absolute"
-              pointerEvents="none"
-              style={{
-                left: primary.position.x,
-                top: primary.position.y,
-                width: primary.size.width,
-                height: primary.size.height,
-              }}
-            >
-              {(['nw', 'ne', 'sw', 'se'] as Corner[]).map((c) => (
-                <Box
-                  key={c}
-                  style={{ ...handleStyle(c), pointerEvents: 'auto' }}
-                  onPointerDown={startResize(c)}
-                />
-              ))}
-            </Box>
-          )}
+          {scene}
         </Box>
       </Box>
+      <ZoomHud
+        zoom={zoom}
+        onZoomIn={() => zoomTowardCenter(zoom + ZOOM_STEP)}
+        onZoomOut={() => zoomTowardCenter(zoom - ZOOM_STEP)}
+        onFit={fitToFrame}
+      />
     </Flex>
   );
 }
