@@ -41,7 +41,7 @@ export interface AdElementBase {
   parentId: string | null;
   /** background SVG element is locked & non-groupable, per spec invariant. */
   locked?: boolean;
-  /** hidden from canvas + excluded from hit-testing (Phase 1 visibility control). */
+  /** hidden from canvas + excluded from hit-testing (layout / ADSCM-1380 visibility control). */
   hidden?: boolean;
 }
 

@@ -15,20 +15,31 @@ Then open http://localhost:5173.
 
 ## Preview features menu
 
-The **"Preview features"** menu in the top bar toggles each roadmap phase on/off so you can
-preview the product at different stages. Phases map to the ARENA spec:
+The **"Preview features"** menu in the top bar is aligned to the five Template Editor epics
+(see [Epic one-pagers](https://sportradar.atlassian.net/wiki/spaces/ARENA/pages/398296040/Epic+one-pagers+PO+showcase+drafts)).
+Turn switches on one at a time to preview that epic's outcome.
 
-| Phase | What it unlocks |
+Deep links use `?epic=ADSCM-1371` (or `1380` / `1386` / `1392` / `1401`). That turns on the named epic **and every epic scheduled before it**. Hosted at [template-editor-prototype.netlify.app](https://template-editor-prototype.netlify.app/).
+
+| Link | What's on |
 | --- | --- |
-| **1 · Canvas editing** | Move / resize (corner handles) / add / rename / recolor / lock / hide / reorder elements; multi-element move; properties panel colour, size and position fields. |
-| **2 · Grouping** | Create / ungroup / rename groups, nested layer tree, enter-group editing (double-click), group transforms; turning it off flattens the layer + timeline lists. |
-| **3a.1 · Preset animations** | Apply IN / OUT presets to layers/groups and preview them playing in the rendered canvas via a slim transport bar (no track editor). Turning it off hides the Animate tab and playback. |
-| **3a.2 · Timeline** | Per-layer track editor: ruler, draggable clips, retiming and scrubbing. Replaces the slim transport bar. |
-| **3b · Extended effects** | DURING effects, extra presets (Spin), per-effect **intensity**, and effect duplication. |
-| **3c · Custom keyframes** | CUSTOM tab, convert-to-custom (delayed-entrance preserved), keyframe duplicate / track-shift, timeline zoom and snapping. |
+| [`?epic=ADSCM-1371`](https://template-editor-prototype.netlify.app/?epic=ADSCM-1371) | Apply & play animations |
+| [`?epic=ADSCM-1380`](https://template-editor-prototype.netlify.app/?epic=ADSCM-1380) | + Fix existing layout |
+| [`?epic=ADSCM-1386`](https://template-editor-prototype.netlify.app/?epic=ADSCM-1386) | + Add & restyle elements |
+| [`?epic=ADSCM-1392`](https://template-editor-prototype.netlify.app/?epic=ADSCM-1392) | + Groups |
+| [`?epic=ADSCM-1401`](https://template-editor-prototype.netlify.app/?epic=ADSCM-1401) | + Timeline |
 
-Dependencies: timeline (3a.2) and extended effects (3b) need preset animations (3a.1);
-custom keyframes (3c) need the timeline (3a.2). Phases auto-disable when a prerequisite is turned off.
+| Switch | Epic | What it unlocks |
+| --- | --- | --- |
+| **Apply & play animations** | [ADSCM-1371](https://sportradar.atlassian.net/browse/ADSCM-1371) | Apply IN / OUT presets and preview them playing via a slim transport bar (no track editor). Live HTML / Ad Tag delivery is **not** in this prototype. |
+| **Fix existing layout** | [ADSCM-1380](https://sportradar.atlassian.net/browse/ADSCM-1380) | Move, lock/hide, reorder, multi-select and move together. |
+| **Add & restyle elements** | [ADSCM-1386](https://sportradar.atlassian.net/browse/ADSCM-1386) | Add, rename, resize, recolor, and delete layers. |
+| **Groups** | [ADSCM-1392](https://sportradar.atlassian.net/browse/ADSCM-1392) | Create / ungroup / rename groups, nested layer tree, enter-group editing, group transforms. |
+| **Timeline** | [ADSCM-1401](https://sportradar.atlassian.net/browse/ADSCM-1401) | Per-layer track editor: ruler, draggable clips, retiming and scrubbing. |
+
+**Later** (collapsed in the menu) keeps ARENA Phase 3b / 3c for engineering: extended effects and custom keyframes.
+
+Dependencies: Timeline and Later → Extended effects need Apply & play animations; custom keyframes need Timeline. Flags auto-disable when a prerequisite is turned off.
 
 ## What's in here
 
@@ -46,6 +57,8 @@ custom keyframes (3c) need the timeline (3a.2). Phases auto-disable when a prere
 | `src/lib/` | `easing`, `engine` (scene resolution), `effects` (preset catalog), `clips`, `format`. |
 | `src/data/mockTemplate.ts` | The soccer creative: elements, groups, data sources, seeded animations. |
 | `src/store/editorStore.ts` | Zustand store for editor + playback state. |
+| `src/store/featureStore.ts` | Epic-aligned preview flags. |
+| `src/lib/phases.ts` | Flag metadata and epic menu order. |
 | `src/components/` | UI: `shell/`, `editor/`, `canvas/`, `timeline/`. |
 
 ## Notes

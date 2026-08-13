@@ -12,8 +12,8 @@ import { usePlaybackLoop } from '../../lib/usePlayback';
 
 export default function Editor() {
   usePlaybackLoop();
-  const presets = usePhase('p3a');
-  const timeline = usePhase('p3at');
+  const presets = usePhase('presets');
+  const timeline = usePhase('timeline');
   return (
     <Flex direction="column" height="100vh" overflow="hidden">
       <HostBar />

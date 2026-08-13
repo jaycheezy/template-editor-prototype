@@ -414,8 +414,8 @@ export default function AnimatePanel() {
   const clips = useEditorStore((s) => s.animation.clips);
   const applyEffect = useEditorStore((s) => s.applyEffect);
   const applyEffectToSelection = useEditorStore((s) => s.applyEffectToSelection);
-  const p3b = usePhase('p3b');
-  const p3c = usePhase('p3c');
+  const p3b = usePhase('extended');
+  const p3c = usePhase('keyframes');
 
   const tabs = useMemo<{ id: ClipKind; label: string }[]>(() => {
     const out: { id: ClipKind; label: string }[] = [

@@ -1,25 +1,19 @@
 import { create } from 'zustand';
-import { PHASE_BY_ID, PHASES, type PhaseId } from '../lib/phases';
-
-type FlagMap = Record<PhaseId, boolean>;
-
-const ALL_OFF: FlagMap = PHASES.reduce((acc, p) => {
-  acc[p.id] = false;
-  return acc;
-}, {} as FlagMap);
+import { ALL_OFF, flagsFromSearch, PHASE_BY_ID, PHASES, type FlagMap, type PhaseId } from '../lib/phases';
 
 interface FeatureState {
   flags: FlagMap;
   setFlag: (id: PhaseId, value: boolean) => void;
   toggleFlag: (id: PhaseId) => void;
   setAll: (value: boolean) => void;
+  applyFlags: (flags: FlagMap) => void;
   reset: () => void;
 }
 
 /**
  * Resolve raw flags into effective flags, honouring phase dependencies.
  * PHASES is ordered so prerequisites come first, so we can cascade against the
- * already-resolved `out` map (handles multi-level chains like 3c → timeline → presets).
+ * already-resolved `out` map (handles multi-level chains like keyframes → timeline → presets).
  */
 export function resolveEffective(flags: FlagMap): FlagMap {
   const out = { ...flags };
@@ -32,12 +26,11 @@ export function resolveEffective(flags: FlagMap): FlagMap {
 }
 
 export const useFeatureStore = create<FeatureState>((set) => ({
-  flags: { ...ALL_OFF },
+  flags: flagsFromSearch(typeof window === 'undefined' ? '' : window.location.search) ?? { ...ALL_OFF },
   setFlag: (id, value) =>
     set((s) => {
       const flags = { ...s.flags, [id]: value };
       if (!value) {
-        // turning a phase off also disables anything that (transitively) depends on it
         let changed = true;
         while (changed) {
           changed = false;
@@ -49,7 +42,6 @@ export const useFeatureStore = create<FeatureState>((set) => ({
           });
         }
       } else {
-        // turning a phase on re-enables all of its (transitive) prerequisites
         const enable = (pid: PhaseId) => {
           PHASE_BY_ID[pid].requires.forEach((req) => {
             if (!flags[req]) {
@@ -71,6 +63,7 @@ export const useFeatureStore = create<FeatureState>((set) => ({
         return acc;
       }, {} as FlagMap),
     })),
+  applyFlags: (flags) => set(() => ({ flags: { ...flags } })),
   reset: () => set(() => ({ flags: { ...ALL_OFF } })),
 }));
 

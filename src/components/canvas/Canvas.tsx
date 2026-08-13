@@ -16,11 +16,13 @@ type Corner = 'nw' | 'ne' | 'sw' | 'se';
 function ElementView({
   rendered,
   selected,
+  canMove,
   onPointerDown,
   onDoubleClick,
 }: {
   rendered: RenderedElement;
   selected: boolean;
+  canMove: boolean;
   onPointerDown: (e: React.PointerEvent, el: AdElement) => void;
   onDoubleClick: (e: React.MouseEvent, el: AdElement) => void;
 }) {
@@ -35,7 +37,7 @@ function ElementView({
     transform: `rotate(${transform.rotation}deg) scale(${transform.scaleX}, ${transform.scaleY})`,
     transformOrigin: 'center center',
     opacity: transform.opacity,
-    cursor: element.locked ? 'default' : 'move',
+    cursor: element.locked || !canMove ? 'default' : 'move',
   };
 
   let content: React.ReactNode;
@@ -109,8 +111,9 @@ export default function Canvas() {
   const enterGroup = useEditorStore((s) => s.enterGroup);
   const exitGroup = useEditorStore((s) => s.exitGroup);
 
-  const canEdit = usePhase('p1');
-  const canGroup = usePhase('p2');
+  const canLayout = usePhase('layout');
+  const canAuthor = usePhase('author');
+  const canGroup = usePhase('groups');
 
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
@@ -147,13 +150,13 @@ export default function Canvas() {
       const alreadySelected = highlightedElements.has(el.id);
       if (!alreadySelected) {
         select(el.id, {
-          additive: e.metaKey || e.ctrlKey,
-          range: e.shiftKey,
+          additive: canLayout && (e.metaKey || e.ctrlKey),
+          range: canLayout && e.shiftKey,
           rangeOrder: elementRangeOrder,
         });
       }
 
-      if (!canEdit || isEffectivelyLocked(el, groups)) return;
+      if (!canLayout || isEffectivelyLocked(el, groups)) return;
 
       // Drag the whole current selection (or just this element if it was not selected).
       const movingIds = alreadySelected && selectedIds.length > 0 ? selectedIds : [el.id];
@@ -176,7 +179,7 @@ export default function Canvas() {
       window.addEventListener('pointermove', onMove);
       window.addEventListener('pointerup', onUp);
     },
-    [canEdit, elementRangeOrder, groups, highlightedElements, moveSelectionBy, select, selectedIds],
+    [canLayout, elementRangeOrder, groups, highlightedElements, moveSelectionBy, select, selectedIds],
   );
 
   const handleDoubleClick = useCallback(
@@ -187,11 +190,11 @@ export default function Canvas() {
     [canGroup, enterGroup],
   );
 
-  // Resize: single non-locked element, Phase 1 only.
+  // Resize: single non-locked element, authoring epic only.
   const primaryId = selectedIds.length === 1 ? selectedIds[0] : null;
   const primary = primaryId ? elements.find((el) => el.id === primaryId) ?? null : null;
   const canResize =
-    canEdit && primary != null && primary.type !== 'SVG' && !isEffectivelyLocked(primary, groups);
+    canAuthor && primary != null && primary.type !== 'SVG' && !isEffectivelyLocked(primary, groups);
 
   const startResize = useCallback(
     (corner: Corner) => (e: React.PointerEvent) => {
@@ -284,6 +287,7 @@ export default function Canvas() {
               key={r.element.id}
               rendered={r}
               selected={highlightedElements.has(r.element.id)}
+              canMove={canLayout}
               onPointerDown={handlePointerDown}
               onDoubleClick={handleDoubleClick}
             />

@@ -14,7 +14,7 @@ export default function RightSidebar() {
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const rightModeRaw = useEditorStore((s) => s.rightMode);
   const setRightMode = useEditorStore((s) => s.setRightMode);
-  const canAnimate = usePhase('p3a');
+  const canAnimate = usePhase('presets');
   const rightMode = canAnimate ? rightModeRaw : 'properties';
 
   const primaryId = selectedIds[selectedIds.length - 1] ?? null;

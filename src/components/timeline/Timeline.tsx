@@ -81,8 +81,8 @@ export default function Timeline() {
   const updateClipTiming = useEditorStore((s) => s.updateClipTiming);
   const updateKeyframe = useEditorStore((s) => s.updateKeyframe);
 
-  const canGroup = usePhase('p2');
-  const canCustom = usePhase('p3c');
+  const canGroup = usePhase('groups');
+  const canCustom = usePhase('keyframes');
   const [zoom, setZoom] = useState(1);
   const [snap, setSnap] = useState(false);
   const PPMS = BASE_PPMS * zoom;

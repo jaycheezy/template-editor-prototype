@@ -152,7 +152,8 @@ function ElementRow({
   draggable,
   isPlaceholder,
   selected,
-  canEdit,
+  canLayout,
+  canAuthor,
   onSelect,
   onDragStart,
 }: {
@@ -161,7 +162,8 @@ function ElementRow({
   draggable: boolean;
   isPlaceholder: boolean;
   selected: boolean;
-  canEdit: boolean;
+  canLayout: boolean;
+  canAuthor: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onDragStart: (elementId: string, e: React.PointerEvent) => void;
 }) {
@@ -241,7 +243,7 @@ function ElementRow({
           noOfLines={1}
           flex={1}
           onDoubleClick={(e) => {
-            if (!canEdit) return;
+            if (!canAuthor) return;
             e.stopPropagation();
             setDraft(el.name);
             setEditing(true);
@@ -251,7 +253,7 @@ function ElementRow({
         </Text>
       )}
 
-      {canEdit && (
+      {canLayout && (
         <Menu placement="bottom-end" isLazy>
           <MenuButton
             as={IconButton}
@@ -281,12 +283,12 @@ function ElementRow({
       <VisibilityLockActions
         hidden={el.hidden}
         locked={el.locked}
-        canEdit={canEdit}
+        canEdit={canLayout}
         onToggleHidden={() => toggleElementHidden(el.id)}
         onToggleLocked={() => toggleElementLocked(el.id)}
       />
 
-      {canEdit && (
+      {canAuthor && (
         <IconButton
           aria-label={`Delete ${el.name}`}
           icon={<LuTrash2 size={14} />}
@@ -473,8 +475,9 @@ export default function LayerTree() {
   const toggleGroupCollapsed = useEditorStore((s) => s.toggleGroupCollapsed);
   const moveElementLayer = useEditorStore((s) => s.moveElementLayer);
   const enterGroup = useEditorStore((s) => s.enterGroup);
-  const canEdit = usePhase('p1');
-  const canGroup = usePhase('p2');
+  const canLayout = usePhase('layout');
+  const canAuthor = usePhase('author');
+  const canGroup = usePhase('groups');
 
   const listRef = useRef<HTMLDivElement>(null);
   const baseRowsRef = useRef<LayerRow[]>([]);
@@ -501,9 +504,13 @@ export default function LayerTree() {
 
   const handleSelect = useCallback(
     (id: string, e: React.MouseEvent) => {
-      select(id, { additive: e.metaKey || e.ctrlKey, range: e.shiftKey, rangeOrder: selectableIds });
+      select(id, {
+        additive: canLayout && (e.metaKey || e.ctrlKey),
+        range: canLayout && e.shiftKey,
+        rangeOrder: selectableIds,
+      });
     },
-    [select, selectableIds],
+    [canLayout, select, selectableIds],
   );
 
   useEffect(() => {
@@ -638,10 +645,11 @@ export default function LayerTree() {
                     <ElementRow
                       el={el}
                       depth={row.depth}
-                      draggable={canEdit && !el.locked && draggingId === null}
+                      draggable={canLayout && !el.locked && draggingId === null}
                       isPlaceholder={isPlaceholder}
                       selected={selectedIds.includes(el.id)}
-                      canEdit={canEdit}
+                      canLayout={canLayout}
+                      canAuthor={canAuthor}
                       onSelect={(e) => handleSelect(el.id, e)}
                       onDragStart={startDrag}
                     />

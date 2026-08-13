@@ -36,8 +36,8 @@ export default function LeftSidebar() {
   const enteredGroupId = useEditorStore((s) => s.enteredGroupId);
   const groups = useEditorStore((s) => s.groups);
   const exitGroup = useEditorStore((s) => s.exitGroup);
-  const canEdit = usePhase('p1');
-  const canGroup = usePhase('p2');
+  const canAuthor = usePhase('author');
+  const canGroup = usePhase('groups');
 
   return (
     <Flex
@@ -65,7 +65,7 @@ export default function LeftSidebar() {
                 onClick={() => groupSelection()}
               />
             )}
-            {canEdit && (
+            {canAuthor && (
               <Menu placement="bottom-end" isLazy>
                 <MenuButton
                   as={IconButton}

@@ -94,7 +94,15 @@ function ColorField({
   );
 }
 
-function PositionSizeFields({ el, canEdit }: { el: AdElement; canEdit: boolean }) {
+function PositionSizeFields({
+  el,
+  canMove,
+  canResize,
+}: {
+  el: AdElement;
+  canMove: boolean;
+  canResize: boolean;
+}) {
   const update = useEditorStore((s) => s.updateElement);
   const resizeElement = useEditorStore((s) => s.resizeElement);
   return (
@@ -103,13 +111,13 @@ function PositionSizeFields({ el, canEdit }: { el: AdElement; canEdit: boolean }
         <NumberField
           label="X position"
           value={el.position.x}
-          isDisabled={!canEdit}
+          isDisabled={!canMove}
           onChange={(v) => update(el.id, { position: { ...el.position, x: v } })}
         />
         <NumberField
           label="Y position"
           value={el.position.y}
-          isDisabled={!canEdit}
+          isDisabled={!canMove}
           onChange={(v) => update(el.id, { position: { ...el.position, y: v } })}
         />
       </HStack>
@@ -117,13 +125,13 @@ function PositionSizeFields({ el, canEdit }: { el: AdElement; canEdit: boolean }
         <NumberField
           label="Width"
           value={el.size.width}
-          isDisabled={!canEdit}
+          isDisabled={!canResize}
           onChange={(v) => resizeElement(el.id, { width: v, height: el.size.height })}
         />
         <NumberField
           label="Height"
           value={el.size.height}
-          isDisabled={!canEdit}
+          isDisabled={!canResize}
           onChange={(v) => resizeElement(el.id, { width: el.size.width, height: v })}
         />
       </HStack>
@@ -131,7 +139,15 @@ function PositionSizeFields({ el, canEdit }: { el: AdElement; canEdit: boolean }
   );
 }
 
-function TextControls({ el, canEdit }: { el: TextElement; canEdit: boolean }) {
+function TextControls({
+  el,
+  canMove,
+  canAuthor,
+}: {
+  el: TextElement;
+  canMove: boolean;
+  canAuthor: boolean;
+}) {
   const update = useEditorStore((s) => s.updateTextElement);
 
   return (
@@ -195,15 +211,19 @@ function TextControls({ el, canEdit }: { el: TextElement; canEdit: boolean }) {
         </HStack>
       </Box>
 
-      {canEdit && (
+      {(canAuthor || canMove) && (
         <Box>
           <Text fontSize="17px" fontWeight={700} mb={3}>
             Color &amp; layout
           </Text>
-          <ColorField label="Text color" value={el.color} onChange={(v) => update(el.id, { color: v })} />
-          <Box mt={4}>
-            <PositionSizeFields el={el} canEdit={canEdit} />
-          </Box>
+          {canAuthor && (
+            <ColorField label="Text color" value={el.color} onChange={(v) => update(el.id, { color: v })} />
+          )}
+          {(canMove || canAuthor) && (
+            <Box mt={canAuthor ? 4 : 0}>
+              <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
+            </Box>
+          )}
         </Box>
       )}
 
@@ -251,7 +271,15 @@ function TextControls({ el, canEdit }: { el: TextElement; canEdit: boolean }) {
   );
 }
 
-function VectorControls({ el, canEdit }: { el: VectorElement; canEdit: boolean }) {
+function VectorControls({
+  el,
+  canMove,
+  canAuthor,
+}: {
+  el: VectorElement;
+  canMove: boolean;
+  canAuthor: boolean;
+}) {
   const update = useEditorStore((s) => s.updateElement);
   const setFill = (fill: string) => {
     const svg = el.svg.split(el.fill).join(fill);
@@ -262,31 +290,39 @@ function VectorControls({ el, canEdit }: { el: VectorElement; canEdit: boolean }
       <Text fontSize="13px" color="gray.500">
         Vector element.
       </Text>
-      {canEdit ? (
+      {canAuthor || canMove ? (
         <>
-          <ColorField label="Fill color" value={el.fill} onChange={setFill} />
-          <PositionSizeFields el={el} canEdit={canEdit} />
+          {canAuthor && <ColorField label="Fill color" value={el.fill} onChange={setFill} />}
+          <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
         </>
       ) : (
         <Text fontSize="13px" color="gray.500">
-          Enable Phase 1 to edit fill, size and position.
+          Turn on Fix existing layout to edit position, or Add &amp; restyle elements to edit fill and size.
         </Text>
       )}
     </VStack>
   );
 }
 
-function ImageControls({ el, canEdit }: { el: AdElement; canEdit: boolean }) {
+function ImageControls({
+  el,
+  canMove,
+  canAuthor,
+}: {
+  el: AdElement;
+  canMove: boolean;
+  canAuthor: boolean;
+}) {
   return (
     <VStack align="stretch" spacing={6}>
       <Text fontSize="13px" color="gray.500">
         Image element. Drag a handle on the canvas to resize.
       </Text>
-      {canEdit ? (
-        <PositionSizeFields el={el} canEdit={canEdit} />
+      {canAuthor || canMove ? (
+        <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
       ) : (
         <Text fontSize="13px" color="gray.500">
-          Enable Phase 1 to edit size and position.
+          Turn on Fix existing layout to edit position, or Add &amp; restyle elements to resize.
         </Text>
       )}
     </VStack>
@@ -357,8 +393,9 @@ export default function PropertiesPanel() {
   const elements = useEditorStore((s) => s.elements);
   const groups = useEditorStore((s) => s.groups);
   const selectedIds = useEditorStore((s) => s.selectedIds);
-  const canEdit = usePhase('p1');
-  const canGroup = usePhase('p2');
+  const canMove = usePhase('layout');
+  const canAuthor = usePhase('author');
+  const canGroup = usePhase('groups');
   const primaryId = selectedIds[selectedIds.length - 1] ?? null;
   const el = elements.find((e) => e.id === primaryId) ?? null;
   const group = primaryId ? groups[primaryId] : undefined;
@@ -379,11 +416,11 @@ export default function PropertiesPanel() {
       {group ? (
         <GroupControls groupId={group.id} canGroup={canGroup} />
       ) : el && el.type === 'TEXT' ? (
-        <TextControls el={el} canEdit={canEdit} />
+        <TextControls el={el} canMove={canMove} canAuthor={canAuthor} />
       ) : el && el.type === 'VECTOR' ? (
-        <VectorControls el={el} canEdit={canEdit} />
+        <VectorControls el={el} canMove={canMove} canAuthor={canAuthor} />
       ) : el ? (
-        <ImageControls el={el} canEdit={canEdit} />
+        <ImageControls el={el} canMove={canMove} canAuthor={canAuthor} />
       ) : null}
     </Flex>
   );

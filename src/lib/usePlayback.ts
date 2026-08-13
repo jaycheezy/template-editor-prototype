@@ -6,7 +6,7 @@ import type { AnimationModel } from '../types';
 /**
  * Last moment any animation content occurs (latest keyframe / clip end).
  * Used for preset-only preview so playback auto-fits to the content instead of
- * the full timeline duration (no manual duration field in Phase 3a.1).
+ * the full timeline duration (no manual duration field until Timeline is on).
  */
 export function animationContentEnd(animation: AnimationModel): number {
   let end = 0;
@@ -47,7 +47,7 @@ export function usePlaybackLoop() {
       const delta = now - lastRef.current;
       lastRef.current = now;
       const state = useEditorStore.getState();
-      const timelineOn = resolveEffective(useFeatureStore.getState().flags).p3at;
+      const timelineOn = resolveEffective(useFeatureStore.getState().flags).timeline;
       const end = timelineOn ? durationMs : Math.max(animationContentEnd(state.animation), 1);
       const willLoop = timelineOn ? loop : false;
       const next = state.currentTime + delta;
