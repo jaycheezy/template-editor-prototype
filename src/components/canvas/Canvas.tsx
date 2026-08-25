@@ -6,10 +6,9 @@ import { usePhase } from '../../store/featureStore';
 import { groupDescendantAabb, type Rect } from '../../lib/bounds';
 import { isEffectivelyLocked, renderScene, type RenderedElement } from '../../lib/engine';
 import { applyTextCase } from '../../lib/format';
-import { buildLayerRows, buildSiblingOrder, sortElementsForPaint } from '../../lib/layers';
+import { buildFlatLayerListIds, buildSiblingOrder, sortElementsForPaint } from '../../lib/layers';
 import {
   isInEnteredScope,
-  layerListElementIds,
   selectableAtScope,
   shouldShowGroupBoundingBox,
 } from '../../lib/selection';
@@ -369,18 +368,15 @@ export default function Canvas() {
 
   const dragRef = useRef<{ startX: number; startY: number } | null>(null);
 
-  const elementRangeOrder = useMemo(
-    () => layerListElementIds(buildLayerRows(elements, groups, rootOrder)),
-    [elements, groups, rootOrder],
-  );
-
   const rendered = useMemo(
     () => renderScene(elements, groups, animation, currentTime, canGroup),
     [elements, groups, animation, currentTime, canGroup],
   );
 
   const paintOrder = useMemo(() => {
-    const siblingOrder = buildSiblingOrder(elements, groups, rootOrder);
+    const siblingOrder = canGroup
+      ? buildSiblingOrder(elements, groups, rootOrder)
+      : [...buildFlatLayerListIds(elements)].reverse();
     const byId = new Map(rendered.map((r) => [r.element.id, r]));
     return sortElementsForPaint(
       rendered.map((r) => r.element),
@@ -389,7 +385,7 @@ export default function Canvas() {
       .map((el) => byId.get(el.id))
       .filter((r): r is RenderedElement => Boolean(r))
       .filter((r) => !r.hidden);
-  }, [rendered, elements, groups, rootOrder]);
+  }, [rendered, elements, groups, rootOrder, canGroup]);
 
   const groupBoxes = useMemo(() => {
     if (!canGroup) return [];
@@ -445,9 +441,7 @@ export default function Canvas() {
       const alreadySelected = selectedIds.includes(hitId);
       if (!alreadySelected) {
         select(hitId, {
-          additive: canLayout && (e.metaKey || e.ctrlKey),
-          range: canLayout && e.shiftKey,
-          rangeOrder: elementRangeOrder,
+          additive: canLayout && (e.metaKey || e.ctrlKey || e.shiftKey),
         });
       }
 
@@ -462,7 +456,6 @@ export default function Canvas() {
     [
       canGroup,
       canLayout,
-      elementRangeOrder,
       elements,
       enteredGroupId,
       groups,
@@ -498,7 +491,7 @@ export default function Canvas() {
       const alreadySelected = selectedIds.includes(groupId);
       if (!alreadySelected) {
         select(groupId, {
-          additive: canLayout && (e.metaKey || e.ctrlKey),
+          additive: canLayout && (e.metaKey || e.ctrlKey || e.shiftKey),
         });
       }
       if (!canLayout || groups[groupId]?.locked) return;

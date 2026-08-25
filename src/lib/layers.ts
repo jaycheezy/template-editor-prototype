@@ -206,6 +206,26 @@ export type LayerRow =
     }
   | { kind: 'element'; id: string; parentId: string | null; depth: number };
 
+/** Front-first layer-list ids ignoring groups — z-index only. */
+export function buildFlatLayerListIds(elements: AdElement[]): string[] {
+  return [...elements]
+    .sort((a, b) => {
+      if (a.position.z !== b.position.z) return b.position.z - a.position.z;
+      return a.id.localeCompare(b.id);
+    })
+    .map((e) => e.id);
+}
+
+/** Flat layer rows for when grouping is off. */
+export function buildFlatLayerRows(elements: AdElement[]): LayerRow[] {
+  return buildFlatLayerListIds(elements).map((id) => ({
+    kind: 'element' as const,
+    id,
+    parentId: null,
+    depth: 0,
+  }));
+}
+
 export function buildLayerRows(
   elements: AdElement[],
   groups: Record<string, Group>,

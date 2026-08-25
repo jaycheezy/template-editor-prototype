@@ -32,16 +32,14 @@ import {
 import { PiBoundingBox } from 'react-icons/pi';
 import type { IconType } from 'react-icons';
 import {
+  buildFlatLayerRows,
   buildLayerRows,
   buildPreviewRows,
   dropTargetAtIndex,
-  sortElementsForLayerList,
-  buildSiblingOrder,
   wouldCreateCycle,
   type LayerDropTarget,
   type LayerRow,
 } from '../../lib/layers';
-import { layerListSelectableIds } from '../../lib/selection';
 import { useEditorStore, type ZOrderOp } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import type { AdElement, ElementType } from '../../types';
@@ -537,26 +535,16 @@ export default function LayerTree() {
 
   const rows = useMemo<LayerRow[]>(() => {
     if (canGroup) return buildLayerRows(elements, groups, rootOrder);
-    const order = buildSiblingOrder(elements, groups, rootOrder);
-    return sortElementsForLayerList(elements, order).map((el) => ({
-      kind: 'element' as const,
-      id: el.id,
-      parentId: null,
-      depth: 0,
-    }));
+    return buildFlatLayerRows(elements);
   }, [elements, groups, rootOrder, canGroup]);
-
-  const selectableIds = useMemo(() => layerListSelectableIds(rows), [rows]);
 
   const handleSelect = useCallback(
     (id: string, e: React.MouseEvent) => {
       select(id, {
-        additive: canLayout && (e.metaKey || e.ctrlKey),
-        range: canLayout && e.shiftKey,
-        rangeOrder: selectableIds,
+        additive: canLayout && (e.metaKey || e.ctrlKey || e.shiftKey),
       });
     },
-    [canLayout, select, selectableIds],
+    [canLayout, select],
   );
 
   useEffect(() => {

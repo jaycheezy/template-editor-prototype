@@ -16,8 +16,7 @@ import {
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { sortKeyframes } from '../../lib/engine';
-import { buildLayerRows, sortElementsForLayerList, buildSiblingOrder } from '../../lib/layers';
-import { layerListSelectableIds } from '../../lib/selection';
+import { buildFlatLayerRows, buildLayerRows } from '../../lib/layers';
 import { PROPERTY_COLORS, PROPERTY_LABELS } from '../../lib/effects';
 import { formatTime } from '../../lib/format';
 import type { AnimatableProperty, Clip, Track } from '../../types';
@@ -129,13 +128,13 @@ export default function Timeline() {
 
   const rows: Row[] = useMemo(() => {
     if (!canGroup) {
-      const order = buildSiblingOrder(elements, groups, rootOrder);
-      return sortElementsForLayerList(elements, order).map((el) => ({
-        id: el.id,
-        name: el.name,
+      const byId = new Map(elements.map((e) => [e.id, e]));
+      return buildFlatLayerRows(elements).map((row) => ({
+        id: row.id,
+        name: byId.get(row.id)?.name ?? row.id,
         isGroup: false,
         depth: 0,
-        entries: entriesFor(el.id),
+        entries: entriesFor(row.id),
       }));
     }
     const byId = new Map(elements.map((e) => [e.id, e]));
@@ -148,21 +147,14 @@ export default function Timeline() {
     }));
   }, [elements, groups, rootOrder, entriesFor, canGroup]);
 
-  const selectableIds = useMemo(
-    () => layerListSelectableIds(buildLayerRows(elements, groups, rootOrder)),
-    [elements, groups, rootOrder],
-  );
-
   const handleRowSelect = useCallback(
     (id: string, e: React.MouseEvent) => {
       select(id, {
-        additive: e.metaKey || e.ctrlKey,
-        range: e.shiftKey,
-        rangeOrder: selectableIds,
+        additive: e.metaKey || e.ctrlKey || e.shiftKey,
       });
       setRightMode('animate');
     },
-    [select, selectableIds, setRightMode],
+    [select, setRightMode],
   );
 
   const seek = useCallback(
