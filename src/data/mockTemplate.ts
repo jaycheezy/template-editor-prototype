@@ -11,23 +11,6 @@ import { getEffect } from '../lib/effects';
 
 export const CANVAS = { width: 300, height: 250 };
 
-function jersey(primary: string, accent: string, number: string): string {
-  const gid = `jg-${number}-${primary.replace('#', '')}`;
-  return `<svg viewBox="0 0 100 112" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
-    <defs>
-      <linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="${accent}"/>
-        <stop offset="1" stop-color="${primary}"/>
-      </linearGradient>
-    </defs>
-    <path d="M34 6 L44 2 Q50 9 56 2 L66 6 L94 22 L82 44 L74 39 L74 106 Q50 112 26 106 L26 39 L18 44 L6 22 Z"
-      fill="url(#${gid})" stroke="rgba(0,0,0,0.25)" stroke-width="1.5" stroke-linejoin="round"/>
-    <path d="M44 3 Q50 12 56 3 L52 14 Q50 16 48 14 Z" fill="rgba(255,255,255,0.85)"/>
-    <text x="50" y="74" text-anchor="middle" font-family="'Source Sans 3',sans-serif" font-weight="900"
-      font-size="34" fill="rgba(255,255,255,0.92)">${number}</text>
-  </svg>`;
-}
-
 function oddsBoxSvg(width: number, height: number, radius: number, fill: string): string {
   return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
     <rect width="${width}" height="${height}" rx="${radius}" ry="${radius}" fill="${fill}"/>
@@ -136,7 +119,7 @@ export const mockElements: AdElement[] = [
     size: { width: 66, height: 76 },
     rotation: 0,
     parentId: 'group.home',
-    svg: jersey('#1b3a8f', '#3a6fd8', '10'),
+    source: { kind: 'team', team: 'home', asset: 'jersey' },
   },
   {
     id: 'el.home_name',
@@ -240,7 +223,7 @@ export const mockElements: AdElement[] = [
     size: { width: 66, height: 76 },
     rotation: 0,
     parentId: 'group.away',
-    svg: jersey('#9c1420', '#d83a44', '7'),
+    source: { kind: 'team', team: 'away', asset: 'jersey' },
   },
   {
     id: 'el.away_name',

@@ -4,10 +4,17 @@ import type {
   AnimatableProperty,
   AnimationModel,
   EasingFunction,
+  CustomImageSource,
   Group,
+  ImageElement,
+  ImageSourceDrafts,
+  ImageSourceKind,
   Keyframe,
+  StaticImageSource,
+  TeamImageSource,
   TextElement,
 } from '../types';
+import { sourceForKind } from '../lib/imageSource';
 import {
   buildInitialAnimation,
   CANVAS,
@@ -36,6 +43,10 @@ import {
 } from '../lib/layers';
 import { isInEnteredScope, resolveSelection, type SelectOptions } from '../lib/selection';
 import { createElement, type NewElementType } from '../lib/factory';
+
+export type ImageSourcePatch = Partial<
+  Omit<StaticImageSource, 'kind'> & Omit<TeamImageSource, 'kind'> & Omit<CustomImageSource, 'kind'>
+>;
 
 export type ZOrderOp = 'front' | 'back' | 'forward' | 'backward';
 
@@ -82,6 +93,10 @@ interface EditorState {
   // element editing
   updateElement: (id: string, patch: Partial<AdElement>) => void;
   updateTextElement: (id: string, patch: Partial<TextElement>) => void;
+  /** Switch an image between unset / static / team asset / custom URL, restoring that mode's last settings. */
+  setImageSourceKind: (id: string, kind: ImageSourceKind) => void;
+  /** Patch the settings of the image's current source. */
+  updateImageSource: (id: string, patch: ImageSourcePatch) => void;
   updateElementPosition: (id: string, x: number, y: number) => void;
   moveSelectionBy: (ids: string[], dx: number, dy: number) => void;
   resizeElement: (id: string, size: { width: number; height: number }, position?: { x: number; y: number }) => void;
@@ -196,6 +211,28 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     set((s) => ({
       elements: s.elements.map((e) =>
         e.id === id && e.type === 'TEXT' ? ({ ...e, ...patch } as TextElement) : e,
+      ),
+    })),
+
+  setImageSourceKind: (id, kind) =>
+    set((s) => ({
+      elements: s.elements.map((e) => {
+        if (e.id !== id || e.type !== 'IMAGE' || e.source.kind === kind) return e;
+        const drafts: ImageSourceDrafts = { ...e.sourceDrafts };
+        const current = e.source;
+        if (current.kind === 'static') drafts.static = current;
+        else if (current.kind === 'team') drafts.team = current;
+        else if (current.kind === 'custom') drafts.custom = current;
+        return { ...e, sourceDrafts: drafts, source: sourceForKind({ ...e, sourceDrafts: drafts }, kind) };
+      }),
+    })),
+
+  updateImageSource: (id, patch) =>
+    set((s) => ({
+      elements: s.elements.map((e) =>
+        e.id === id && e.type === 'IMAGE' && e.source.kind !== 'unset'
+          ? ({ ...e, source: { ...e.source, ...patch } } as ImageElement)
+          : e,
       ),
     })),
 

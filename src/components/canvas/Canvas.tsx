@@ -25,6 +25,7 @@ import {
 } from '../../lib/viewport';
 import { CANVAS } from '../../data/mockTemplate';
 import type { AdElement } from '../../types';
+import ImageContent from './ImageContent';
 
 const SELECTION_STROKE = '1.5px solid rgb(0, 92, 255)';
 const SELECTION_FILL = 'rgba(51, 68, 238, 0.10)';
@@ -96,11 +97,13 @@ function ElementView({
         {applyTextCase(element.content, element.textCase)}
       </div>
     );
+  } else if (element.type === 'IMAGE') {
+    content = <ImageContent element={element} />;
   } else {
     content = (
       <div
         style={{ width: '100%', height: '100%' }}
-        dangerouslySetInnerHTML={{ __html: (element as { svg: string }).svg }}
+        dangerouslySetInnerHTML={{ __html: element.svg }}
       />
     );
   }

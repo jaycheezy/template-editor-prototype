@@ -13,7 +13,6 @@ import {
   Text,
   useToast,
 } from '@chakra-ui/react';
-import { FaShapes } from 'react-icons/fa';
 import {
   LuChevronDown,
   LuChevronRight,
@@ -22,14 +21,11 @@ import {
   LuFolder,
   LuFolderMinus,
   LuGripVertical,
-  LuImage,
   LuLayers,
   LuLock,
   LuLockOpen,
   LuTrash2,
-  LuType,
 } from 'react-icons/lu';
-import { PiBoundingBox } from 'react-icons/pi';
 import type { IconType } from 'react-icons';
 import {
   buildFlatLayerRows,
@@ -42,21 +38,9 @@ import {
 } from '../../lib/layers';
 import { useEditorStore, type ZOrderOp } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
-import type { AdElement, ElementType } from '../../types';
+import type { AdElement } from '../../types';
 import { mc } from '../../theme';
-
-function elementIcon(type: ElementType): IconType {
-  switch (type) {
-    case 'SVG':
-      return FaShapes;
-    case 'IMAGE':
-      return LuImage;
-    case 'VECTOR':
-      return PiBoundingBox;
-    default:
-      return LuType;
-  }
-}
+import { iconForElement } from '../../lib/elementIcon';
 
 const Z_ACTIONS: { op: ZOrderOp; label: string }[] = [
   { op: 'front', label: 'Bring to front' },
@@ -212,7 +196,7 @@ function ElementRow({
       >
         <Icon as={LuGripVertical} boxSize={3.5} color="gray.400" cursor="grab" _active={{ cursor: 'grabbing' }} />
       </Box>
-      <Icon as={elementIcon(el.type)} boxSize={3.5} opacity={0.85} flexShrink={0} />
+      <Icon as={iconForElement(el)} boxSize={3.5} opacity={0.85} flexShrink={0} />
       {editing ? (
         <Input
           size="xs"
@@ -728,7 +712,7 @@ export default function LayerTree() {
       {ghost && ghostNode && (
         <DragGhost
           name={ghostNode.name}
-          icon={'type' in ghostNode ? elementIcon(ghostNode.type) : LuFolder}
+          icon={'type' in ghostNode ? iconForElement(ghostNode as AdElement) : LuFolder}
           depth={ghostDepth}
           x={ghost.x}
           y={ghost.y}

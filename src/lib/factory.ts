@@ -3,12 +3,6 @@ import { uid } from './clips';
 
 export type NewElementType = 'TEXT' | 'IMAGE' | 'VECTOR';
 
-const PLACEHOLDER_IMAGE = `<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
-  <rect width="100" height="100" rx="6" fill="#d6e2f7"/>
-  <path d="M20 70 L42 46 L58 62 L70 50 L84 70 Z" fill="#7095E2"/>
-  <circle cx="68" cy="32" r="8" fill="#7095E2"/>
-</svg>`;
-
 const PLACEHOLDER_VECTOR = (fill: string) =>
   `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
   <rect width="100" height="60" rx="6" fill="${fill}"/>
@@ -55,7 +49,7 @@ export function createElement(
       type: 'IMAGE',
       position: { x: Math.round(x - size / 2), y: Math.round(y - size / 2), z },
       size: { width: size, height: size },
-      svg: PLACEHOLDER_IMAGE,
+      source: { kind: 'unset' },
     };
   }
 

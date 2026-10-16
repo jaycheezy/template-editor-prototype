@@ -16,7 +16,8 @@ import {
 import { LuAlignCenter, LuAlignLeft, LuAlignRight, LuInfo } from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
-import type { AdElement, TextElement, VectorElement } from '../../types';
+import type { AdElement, ImageElement, TextElement, VectorElement } from '../../types';
+import ImageSourceControls from './ImageSourceControls';
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
@@ -304,7 +305,7 @@ function VectorControls({
   );
 }
 
-function ImageControls({
+function SvgControls({
   el,
   canMove,
   canAuthor,
@@ -316,7 +317,7 @@ function ImageControls({
   return (
     <VStack align="stretch" spacing={6}>
       <Text fontSize="13px" color="gray.500">
-        Image element. Drag a handle on the canvas to resize.
+        Frame element. Drag a handle on the canvas to resize.
       </Text>
       {canAuthor || canMove ? (
         <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
@@ -324,6 +325,41 @@ function ImageControls({
         <Text fontSize="13px" color="gray.500">
           Turn on Fix existing layout to edit position, or Add &amp; restyle elements to resize.
         </Text>
+      )}
+    </VStack>
+  );
+}
+
+function ImageControls({
+  el,
+  canMove,
+  canAuthor,
+}: {
+  el: ImageElement;
+  canMove: boolean;
+  canAuthor: boolean;
+}) {
+  const dataSources = useEditorStore((s) => s.dataSources);
+  // team assets and {COMPETITOR_ID} variables come from an event (fixture) data source
+  const hasEventData = dataSources.some((ds) => ds.market === 'fixture');
+  const showLayout = canAuthor || canMove;
+
+  return (
+    <VStack align="stretch" spacing={6}>
+      <ImageSourceControls el={el} canAuthor={canAuthor} hasEventData={hasEventData} />
+      {el.source.kind !== 'unset' && (
+        <Box>
+          <Text fontSize="17px" fontWeight={700} mb={3}>
+            Layout
+          </Text>
+          {showLayout ? (
+            <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
+          ) : (
+            <Text fontSize="13px" color="gray.500">
+              Turn on Fix existing layout to edit position, or Add &amp; restyle elements to resize.
+            </Text>
+          )}
+        </Box>
       )}
     </VStack>
   );
@@ -429,8 +465,10 @@ export default function PropertiesPanel() {
         <TextControls el={el} canMove={canMove} canAuthor={canAuthor} />
       ) : el && el.type === 'VECTOR' ? (
         <VectorControls el={el} canMove={canMove} canAuthor={canAuthor} />
-      ) : el ? (
+      ) : el && el.type === 'IMAGE' ? (
         <ImageControls el={el} canMove={canMove} canAuthor={canAuthor} />
+      ) : el ? (
+        <SvgControls el={el} canMove={canMove} canAuthor={canAuthor} />
       ) : null}
     </Flex>
   );

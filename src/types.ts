@@ -62,10 +62,63 @@ export interface TextElement extends AdElementBase {
   letterSpacing?: number;
 }
 
+/** Home / away only for now (competitor / opponent focus is out of scope). */
+export type TeamSide = 'home' | 'away';
+export type TeamAssetKind = 'jersey' | 'badge';
+export type ImageSourceKind = 'unset' | 'static' | 'team' | 'custom';
+export type CustomFallback = 'jersey' | 'badge' | 'static' | 'none';
+
+/** A normal, non-dynamic image (uploaded file or fixed URL). */
+export interface StaticImageSource {
+  kind: 'static';
+  url: string;
+}
+
+/** Sportradar-supplied team asset, resolved from the event's home / away competitor. */
+export interface TeamImageSource {
+  kind: 'team';
+  team: TeamSide;
+  asset: TeamAssetKind;
+}
+
+/** Operator-hosted image whose URL is built from data-point tokens, e.g. {TEAM_AWAY_COMPETITOR_ID}. */
+export interface CustomImageSource {
+  kind: 'custom';
+  urlTemplate: string;
+  /** what to show when the resolved URL can't be loaded */
+  fallback: CustomFallback;
+  /** team used by the jersey / badge fallback when it can't be inferred from the template tokens */
+  fallbackTeam: TeamSide;
+  /** used when fallback === 'static' */
+  fallbackUrl: string;
+}
+
+/** Brand new image element: the user hasn't picked a source yet. */
+export interface UnsetImageSource {
+  kind: 'unset';
+}
+
+export type ImageSource =
+  | UnsetImageSource
+  | StaticImageSource
+  | TeamImageSource
+  | CustomImageSource;
+
+/** Last-used settings per mode, so switching modes back and forth never loses input. */
+export interface ImageSourceDrafts {
+  static?: StaticImageSource;
+  team?: TeamImageSource;
+  custom?: CustomImageSource;
+}
+
+/**
+ * One image element, three interchangeable sources. Switching `source.kind`
+ * keeps the element id, geometry, z-order and animations intact.
+ */
 export interface ImageElement extends AdElementBase {
   type: 'IMAGE';
-  /** inline svg markup used for the prototype jersey art */
-  svg: string;
+  source: ImageSource;
+  sourceDrafts?: ImageSourceDrafts;
 }
 
 export interface VectorElement extends AdElementBase {

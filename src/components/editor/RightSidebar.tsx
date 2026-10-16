@@ -1,10 +1,9 @@
 import { Box, Button, Flex, HStack, Icon, Text } from '@chakra-ui/react';
-import { LuFolder, LuImage, LuLayers, LuSparkles, LuSlidersHorizontal, LuType } from 'react-icons/lu';
-import { FaShapes } from 'react-icons/fa';
-import { PiBoundingBox } from 'react-icons/pi';
+import { LuFolder, LuLayers, LuSparkles, LuSlidersHorizontal, LuType } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
+import { iconForElement } from '../../lib/elementIcon';
 import PropertiesPanel from './PropertiesPanel';
 import AnimatePanel from './AnimatePanel';
 
@@ -32,8 +31,7 @@ export default function RightSidebar() {
     name = group.name;
   } else if (el) {
     name = el.name;
-    icon =
-      el.type === 'SVG' ? FaShapes : el.type === 'IMAGE' ? LuImage : el.type === 'VECTOR' ? PiBoundingBox : LuType;
+    icon = iconForElement(el);
   }
 
   return (
