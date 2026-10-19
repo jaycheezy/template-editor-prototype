@@ -1,15 +1,14 @@
 import { useMemo, useState } from 'react';
+import type { IconType } from 'react-icons';
 import {
   Box,
   Button,
   Flex,
-  Grid,
   HStack,
   Icon,
   IconButton,
   Input,
   Select,
-  SimpleGrid,
   Slider,
   SliderFilledTrack,
   SliderThumb,
@@ -17,7 +16,28 @@ import {
   Text,
   VStack,
 } from '@chakra-ui/react';
-import { LuCopy, LuPlus, LuSparkles, LuTrash2, LuDiamond } from 'react-icons/lu';
+import {
+  LuActivity,
+  LuArrowDown,
+  LuArrowLeft,
+  LuArrowRight,
+  LuArrowUp,
+  LuArrowUpDown,
+  LuChevronDown,
+  LuChevronLeft,
+  LuChevronUp,
+  LuCopy,
+  LuDiamond,
+  LuEye,
+  LuEyeOff,
+  LuMaximize2,
+  LuMinimize2,
+  LuPlus,
+  LuRotateCw,
+  LuSparkles,
+  LuTrash2,
+  LuWaves,
+} from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { EASING_OPTIONS } from '../../lib/easing';
@@ -32,199 +52,309 @@ const PROPERTY_GROUPS: { label: string; properties: AnimatableProperty[] }[] = [
   { label: 'Opacity', properties: ['opacity'] },
 ];
 
-function clipPrimaryProperty(clip: Clip, tracks: Record<string, Track>): AnimatableProperty {
-  const first = clip.trackIds.map((id) => tracks[id]).find(Boolean);
-  return first?.property ?? 'opacity';
-}
+/** The roles a user picks from; they map onto the IN / DURING / OUT clip kinds. */
+const ROLES: { kind: ClipKind; label: string; color: string }[] = [
+  { kind: 'IN', label: 'Entrance', color: 'green.500' },
+  { kind: 'DURING', label: 'Emphasis', color: 'orange.500' },
+  { kind: 'OUT', label: 'Exit', color: 'red.500' },
+];
 
-function AppliedClipCard({ clip, canCustom, canExtended }: { clip: Clip; canCustom: boolean; canExtended: boolean }) {
-  const tracks = useEditorStore((s) => s.animation.tracks);
+const roleLabel = (kind: ClipKind) => ROLES.find((r) => r.kind === kind)?.label ?? kind;
+const roleColor = (kind: ClipKind) => ROLES.find((r) => r.kind === kind)?.color ?? 'gray.500';
+
+/** Arrows point in the direction the layer travels. */
+const EFFECT_ICONS: Record<string, IconType> = {
+  'fade-in': LuEye,
+  'slide-in-left': LuArrowRight,
+  'slide-in-right': LuArrowLeft,
+  'slide-in-up': LuArrowDown,
+  'slide-in-down': LuArrowUp,
+  'pop-in': LuMaximize2,
+  'spin-in': LuRotateCw,
+  pulse: LuActivity,
+  float: LuArrowUpDown,
+  wiggle: LuWaves,
+  'fade-out': LuEyeOff,
+  'slide-out-left': LuArrowLeft,
+  'slide-out-right': LuArrowRight,
+  'slide-out-up': LuArrowUp,
+  'slide-out-down': LuArrowDown,
+  'pop-out': LuMinimize2,
+};
+
+const fieldLabelProps = { fontSize: '12px', color: 'gray.500', mb: 1 } as const;
+
+function AppliedClipCard({
+  clip,
+  open,
+  onToggle,
+  onChangeType,
+  onConvert,
+  canCustom,
+  canExtended,
+}: {
+  clip: Clip;
+  open: boolean;
+  onToggle: () => void;
+  onChangeType: (clip: Clip, effectId: string) => void;
+  onConvert: (clipId: string) => void;
+  canCustom: boolean;
+  canExtended: boolean;
+}) {
   const durationMs = useEditorStore((s) => s.animation.durationMs);
   const updateClipTiming = useEditorStore((s) => s.updateClipTiming);
   const updateClipIntensity = useEditorStore((s) => s.updateClipIntensity);
-  const convertClipToCustom = useEditorStore((s) => s.convertClipToCustom);
   const duplicateClip = useEditorStore((s) => s.duplicateClip);
   const deleteClip = useEditorStore((s) => s.deleteClip);
-  const color = PROPERTY_COLORS[clipPrimaryProperty(clip, tracks)];
 
   const effect = clip.effectId ? getEffect(clip.effectId) : undefined;
   const isSlide = effect != null && effect.id.startsWith('slide-');
   const supportsIntensity = effect != null && effect.category !== 'fade' && !isSlide;
+  const typeOptions = effectsByKindForPhases(clip.kind, canExtended);
+  const title = clip.label ?? effect?.label ?? clip.effectId ?? 'Animation';
 
   return (
-    <Box borderWidth="1px" borderLeftWidth="3px" borderLeftColor={color} borderColor="gray.200" borderRadius="8px" p={3} bg="gray.50">
-      <HStack justify="space-between" mb={3}>
-        <HStack spacing={2}>
-          <Icon as={LuSparkles} color="mcBlue.500" boxSize={3.5} />
-          <Text fontSize="14px" fontWeight={700}>
-            {clip.label ?? clip.effectId}
+    <Box borderWidth="1px" borderColor="gray.200" borderRadius="4px" overflow="hidden" bg="gray.50">
+      <Flex
+        as="button"
+        type="button"
+        w="100%"
+        align="center"
+        justify="space-between"
+        px={4}
+        py={3}
+        aria-expanded={open}
+        onClick={onToggle}
+        borderBottomWidth={open ? '1px' : 0}
+        borderColor="gray.200"
+        _hover={{ bg: 'gray.100' }}
+      >
+        <Text fontSize="14px" fontWeight={500} textAlign="left">
+          {title}
+        </Text>
+        <HStack spacing={3}>
+          <Text fontSize="12px" color={roleColor(clip.kind)}>
+            {roleLabel(clip.kind)}
           </Text>
+          <Icon as={open ? LuChevronUp : LuChevronDown} boxSize={4} />
         </HStack>
-        <HStack spacing={0}>
-          {canExtended && (
-            <IconButton
-              aria-label="Duplicate effect"
+      </Flex>
+
+      {open && (
+        <VStack align="stretch" spacing={4} p={4}>
+          <Box>
+            <Text {...fieldLabelProps}>Type</Text>
+            <Select
+              size="sm"
+              bg="white"
+              borderRadius="4px"
+              value={clip.effectId ?? ''}
+              onChange={(e) => onChangeType(clip, e.target.value)}
+            >
+              {!typeOptions.some((o) => o.id === clip.effectId) && clip.effectId && (
+                <option value={clip.effectId}>{title}</option>
+              )}
+              {typeOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Box>
+          <Box>
+            <Text {...fieldLabelProps}>Duration (s)</Text>
+            <Input
+              size="sm"
+              bg="white"
+              borderRadius="4px"
+              type="number"
+              step={0.1}
+              value={(clip.duration / 1000).toFixed(1)}
+              onChange={(e) => updateClipTiming(clip.id, { duration: Math.max(100, Number(e.target.value) * 1000) })}
+            />
+          </Box>
+          <Box>
+            <Text {...fieldLabelProps}>Start (s)</Text>
+            <Input
+              size="sm"
+              bg="white"
+              borderRadius="4px"
+              type="number"
+              step={0.1}
+              value={(clip.startTime / 1000).toFixed(1)}
+              onChange={(e) =>
+                updateClipTiming(clip.id, {
+                  startTime: Math.max(0, Math.min(Number(e.target.value) * 1000, durationMs)),
+                })
+              }
+            />
+          </Box>
+          <Box>
+            <Text {...fieldLabelProps}>Easing</Text>
+            <Select
+              size="sm"
+              bg="white"
+              borderRadius="4px"
+              value={clip.easing}
+              onChange={(e) => updateClipTiming(clip.id, { easing: e.target.value as EasingFunction })}
+            >
+              {EASING_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </Select>
+          </Box>
+          {isSlide && (
+            <Box>
+              <Text {...fieldLabelProps}>Distance (px)</Text>
+              <Input
+                size="sm"
+                bg="white"
+                borderRadius="4px"
+                type="number"
+                step={10}
+                min={0}
+                value={Math.round((clip.intensity ?? 1) * SLIDE_DISTANCE)}
+                onChange={(e) => updateClipIntensity(clip.id, Math.max(0, Number(e.target.value)) / SLIDE_DISTANCE)}
+              />
+            </Box>
+          )}
+          {canExtended && supportsIntensity && (
+            <Box>
+              <HStack justify="space-between" mb={1}>
+                <Text {...fieldLabelProps} mb={0}>
+                  Intensity
+                </Text>
+                <Text fontSize="12px" color="gray.500">
+                  {Math.round((clip.intensity ?? 1) * 100)}%
+                </Text>
+              </HStack>
+              <Slider
+                min={0.25}
+                max={2}
+                step={0.05}
+                value={clip.intensity ?? 1}
+                onChange={(v) => updateClipIntensity(clip.id, v)}
+              >
+                <SliderTrack>
+                  <SliderFilledTrack />
+                </SliderTrack>
+                <SliderThumb />
+              </Slider>
+            </Box>
+          )}
+          <HStack justify="space-between" pt={1}>
+            <HStack spacing={1}>
+              {canExtended && (
+                <Button
+                  size="xs"
+                  variant="ghost"
+                  leftIcon={<Icon as={LuCopy} />}
+                  color="gray.600"
+                  onClick={() => duplicateClip(clip.id)}
+                >
+                  Duplicate
+                </Button>
+              )}
+              {canCustom && (
+                <Button size="xs" variant="ghost" color="gray.600" onClick={() => onConvert(clip.id)}>
+                  Convert to Custom
+                </Button>
+              )}
+            </HStack>
+            <Button
               size="xs"
               variant="ghost"
-              color="gray.400"
-              _hover={{ color: 'mcBlue.500' }}
-              icon={<Icon as={LuCopy} />}
-              onClick={() => duplicateClip(clip.id)}
-            />
-          )}
-          <IconButton
-            aria-label="Delete effect"
-            size="xs"
-            variant="ghost"
-            color="gray.400"
-            _hover={{ color: 'red.500' }}
-            icon={<Icon as={LuTrash2} />}
-            onClick={() => deleteClip(clip.id)}
-          />
-        </HStack>
-      </HStack>
-      <HStack spacing={3} mb={3}>
-        <Box flex={1}>
-          <Text fontSize="11px" color="gray.500" mb={1}>
-            Duration (s)
-          </Text>
-          <Input
-            size="xs"
-            type="number"
-            step={0.1}
-            value={(clip.duration / 1000).toFixed(1)}
-            onChange={(e) => updateClipTiming(clip.id, { duration: Math.max(100, Number(e.target.value) * 1000) })}
-          />
-        </Box>
-        <Box flex={1}>
-          <Text fontSize="11px" color="gray.500" mb={1}>
-            Start (s)
-          </Text>
-          <Input
-            size="xs"
-            type="number"
-            step={0.1}
-            value={(clip.startTime / 1000).toFixed(1)}
-            onChange={(e) =>
-              updateClipTiming(clip.id, {
-                startTime: Math.max(0, Math.min(Number(e.target.value) * 1000, durationMs)),
-              })
-            }
-          />
-        </Box>
-      </HStack>
-      <Box mb={3}>
-        <Text fontSize="11px" color="gray.500" mb={1}>
-          Easing
-        </Text>
-        <Select
-          size="xs"
-          value={clip.easing}
-          onChange={(e) => updateClipTiming(clip.id, { easing: e.target.value as EasingFunction })}
-        >
-          {EASING_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
-      </Box>
-      {isSlide && (
-        <Box mb={3}>
-          <Text fontSize="11px" color="gray.500" mb={1}>
-            Distance (px)
-          </Text>
-          <Input
-            size="xs"
-            type="number"
-            step={10}
-            min={0}
-            value={Math.round((clip.intensity ?? 1) * SLIDE_DISTANCE)}
-            onChange={(e) => updateClipIntensity(clip.id, Math.max(0, Number(e.target.value)) / SLIDE_DISTANCE)}
-          />
-        </Box>
-      )}
-      {canExtended && supportsIntensity && (
-        <Box mb={3}>
-          <HStack justify="space-between" mb={1}>
-            <Text fontSize="11px" color="gray.500">
-              Intensity
-            </Text>
-            <Text fontSize="11px" color="gray.500">
-              {Math.round((clip.intensity ?? 1) * 100)}%
-            </Text>
+              color="gray.700"
+              fontWeight={400}
+              leftIcon={<Icon as={LuTrash2} boxSize={4} />}
+              _hover={{ color: 'red.500', bg: 'transparent' }}
+              onClick={() => deleteClip(clip.id)}
+            >
+              Remove
+            </Button>
           </HStack>
-          <Slider
-            min={0.25}
-            max={2}
-            step={0.05}
-            value={clip.intensity ?? 1}
-            onChange={(v) => updateClipIntensity(clip.id, v)}
-          >
-            <SliderTrack>
-              <SliderFilledTrack />
-            </SliderTrack>
-            <SliderThumb />
-          </Slider>
-        </Box>
-      )}
-      {canCustom && (
-        <Button size="xs" variant="outline" width="100%" onClick={() => convertClipToCustom(clip.id)}>
-          Convert to Custom
-        </Button>
+        </VStack>
       )}
     </Box>
   );
 }
 
-function EffectGallery({
-  kind,
-  p3b,
+/** "Select Role" -> pick Entrance / Emphasis / Exit -> pick the animation. */
+function AddAnimationPicker({
+  step,
+  canExtended,
+  onPickRole,
+  onBack,
   onApply,
 }: {
-  kind: ClipKind;
-  p3b: boolean;
+  step: ClipKind | 'roles';
+  canExtended: boolean;
+  onPickRole: (kind: ClipKind) => void;
+  onBack: () => void;
   onApply: (effectId: string) => void;
 }) {
-  const effects = effectsByKindForPhases(kind, p3b);
-  const categories = useMemo(() => Array.from(new Set(effects.map((e) => e.category))), [effects]);
+  const roles = ROLES.filter((r) => canExtended || r.kind !== 'DURING');
+  const optionProps = {
+    variant: 'outline',
+    justifyContent: 'flex-start',
+    w: '100%',
+    h: '40px',
+    px: 4,
+    bg: 'white',
+    borderColor: 'gray.200',
+    borderRadius: '4px',
+    fontWeight: 400,
+    fontSize: '14px',
+    _hover: { borderColor: 'mcBlue.400', bg: 'mcBlue.50' },
+  } as const;
 
   return (
-    <VStack align="stretch" spacing={4}>
-      {categories.map((cat) => (
-        <Box key={cat}>
-          <Text fontSize="11px" fontWeight={700} textTransform="uppercase" color="gray.500" mb={2}>
-            {cat}
+    <Box borderWidth="1px" borderColor="gray.200" borderRadius="4px" bg="gray.50" p={4} mt={4}>
+      {step === 'roles' ? (
+        <>
+          <Text fontSize="16px" fontWeight={600} color="gray.500" mb={3}>
+            Select Role
           </Text>
-          <SimpleGrid columns={2} spacing={2}>
-            {effects
-              .filter((e) => e.category === cat)
-              .map((e) => (
-                <Button
-                  key={e.id}
-                  variant="outline"
-                  size="sm"
-                  height="56px"
-                  borderColor="gray.200"
-                  flexDir="column"
-                  gap={1}
-                  onClick={() => onApply(e.id)}
-                  _hover={{ borderColor: 'mcBlue.400', bg: 'mcBlue.50' }}
-                >
-                  <Box
-                    boxSize="14px"
-                    borderRadius="3px"
-                    bg={PROPERTY_COLORS[e.build({ x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, opacity: 1 })[0].property]}
-                  />
-                  <Text fontSize="11px" fontWeight={500}>
-                    {e.label}
-                  </Text>
-                </Button>
-              ))}
-          </SimpleGrid>
-        </Box>
-      ))}
-    </VStack>
+          <VStack align="stretch" spacing={2}>
+            {roles.map((r) => (
+              <Button key={r.kind} {...optionProps} onClick={() => onPickRole(r.kind)}>
+                {r.label}
+              </Button>
+            ))}
+          </VStack>
+        </>
+      ) : (
+        <>
+          <HStack mb={3} spacing={1}>
+            <IconButton
+              aria-label="Back to roles"
+              size="xs"
+              variant="ghost"
+              color="gray.500"
+              icon={<Icon as={LuChevronLeft} boxSize={4} />}
+              onClick={onBack}
+            />
+            <Text fontSize="16px" fontWeight={600} color="gray.500">
+              {roleLabel(step)}
+            </Text>
+          </HStack>
+          <VStack align="stretch" spacing={2}>
+            {effectsByKindForPhases(step, canExtended).map((e) => (
+              <Button
+                key={e.id}
+                {...optionProps}
+                leftIcon={<Icon as={EFFECT_ICONS[e.id] ?? LuSparkles} boxSize={4} color="gray.600" />}
+                onClick={() => onApply(e.id)}
+              >
+                {e.label}
+              </Button>
+            ))}
+          </VStack>
+        </>
+      )}
+    </Box>
   );
 }
 
@@ -409,29 +539,157 @@ function CustomTab({ targetId }: { targetId: string }) {
   );
 }
 
-export default function AnimatePanel() {
-  const selectedIds = useEditorStore((s) => s.selectedIds);
+function AnimateBody({ selectedIds }: { selectedIds: string[] }) {
   const clips = useEditorStore((s) => s.animation.clips);
   const applyEffect = useEditorStore((s) => s.applyEffect);
   const applyEffectToSelection = useEditorStore((s) => s.applyEffectToSelection);
+  const deleteClip = useEditorStore((s) => s.deleteClip);
+  const updateClipTiming = useEditorStore((s) => s.updateClipTiming);
+  const convertClipToCustom = useEditorStore((s) => s.convertClipToCustom);
   const p3b = usePhase('extended');
   const p3c = usePhase('keyframes');
 
-  const tabs = useMemo<{ id: ClipKind; label: string }[]>(() => {
-    const out: { id: ClipKind; label: string }[] = [
-      { id: 'IN', label: 'IN' },
-      { id: 'OUT', label: 'OUT' },
-    ];
-    if (p3b) out.splice(1, 0, { id: 'DURING', label: 'DURING' });
-    if (p3c) out.push({ id: 'CUSTOM', label: 'CUSTOM' });
-    return out;
-  }, [p3b, p3c]);
-
-  const [tabRaw, setTab] = useState<ClipKind>('IN');
-  const tab = tabs.some((t) => t.id === tabRaw) ? tabRaw : 'IN';
+  // undefined = default (first card open), null = all collapsed
+  const [openRaw, setOpen] = useState<string | null | undefined>(undefined);
+  const [step, setStep] = useState<'closed' | 'roles' | ClipKind>('closed');
+  const [customOpen, setCustomOpen] = useState(false);
 
   const multi = selectedIds.length > 1;
-  const primaryId = selectedIds[selectedIds.length - 1] ?? null;
+  const primaryId = selectedIds[selectedIds.length - 1];
+
+  const applied = useMemo(
+    () =>
+      Object.values(clips)
+        .filter((c) => c.targetId === primaryId && c.kind !== 'CUSTOM')
+        .sort((a, b) => a.startTime - b.startTime),
+    [clips, primaryId],
+  );
+  const openId = openRaw === undefined ? (applied[0]?.id ?? null) : openRaw;
+
+  /** The clip that exists now but not before `before` was captured. */
+  const newClipSince = (before: Set<string>): Clip | undefined =>
+    Object.values(useEditorStore.getState().animation.clips).find((c) => !before.has(c.id) && c.targetId === primaryId);
+  const clipIds = () => new Set(Object.keys(useEditorStore.getState().animation.clips));
+
+  const onApply = (effectId: string) => {
+    const before = clipIds();
+    if (multi) applyEffectToSelection(effectId);
+    else applyEffect(primaryId, effectId);
+    const created = multi ? undefined : newClipSince(before);
+    if (created) setOpen(created.id);
+    setStep('closed');
+  };
+
+  // swap the effect but keep the timing the user already set
+  const onChangeType = (clip: Clip, effectId: string) => {
+    if (effectId === clip.effectId) return;
+    const { startTime, duration, easing } = clip;
+    const before = clipIds();
+    deleteClip(clip.id);
+    before.delete(clip.id);
+    applyEffect(clip.targetId, effectId);
+    const created = newClipSince(before);
+    if (created) {
+      updateClipTiming(created.id, { startTime, duration, easing });
+      setOpen(created.id);
+    }
+  };
+
+  const onConvert = (clipId: string) => {
+    convertClipToCustom(clipId);
+    setCustomOpen(true);
+  };
+
+  return (
+    <Box flex={1} overflowY="auto" px={4} py={4}>
+      {multi && (
+        <Text fontSize="12px" color="mcBlue.600" fontWeight={600} mb={3}>
+          Applying to {selectedIds.length} selected layers/groups.
+        </Text>
+      )}
+
+      {!multi && (
+        <Box>
+          <Text fontSize="17px" fontWeight={700} mb={3}>
+            Applied Animations
+          </Text>
+          {applied.length === 0 ? (
+            <Text fontSize="14px" color="gray.500" mb={4}>
+              No animations on this element
+            </Text>
+          ) : (
+            <VStack align="stretch" spacing={2} mb={4}>
+              {applied.map((c) => (
+                <AppliedClipCard
+                  key={c.id}
+                  clip={c}
+                  open={openId === c.id}
+                  onToggle={() => setOpen(openId === c.id ? null : c.id)}
+                  onChangeType={onChangeType}
+                  onConvert={onConvert}
+                  canCustom={p3c}
+                  canExtended={p3b}
+                />
+              ))}
+            </VStack>
+          )}
+        </Box>
+      )}
+
+      <Box mx={-4} borderTopWidth="1px" borderBottomWidth="1px" borderColor="gray.200">
+        <Button
+          variant="ghost"
+          w="100%"
+          h="56px"
+          borderRadius={0}
+          color="mcBlue.600"
+          fontSize="16px"
+          fontWeight={600}
+          leftIcon={<Icon as={LuPlus} boxSize={4} />}
+          onClick={() => setStep(step === 'closed' ? 'roles' : 'closed')}
+          aria-expanded={step !== 'closed'}
+        >
+          Add New Animation
+        </Button>
+      </Box>
+
+      {step !== 'closed' && (
+        <AddAnimationPicker
+          step={step}
+          canExtended={p3b}
+          onPickRole={setStep}
+          onBack={() => setStep('roles')}
+          onApply={onApply}
+        />
+      )}
+
+      {p3c && !multi && (
+        <Box mt={4}>
+          <Button
+            variant="ghost"
+            w="100%"
+            justifyContent="space-between"
+            px={0}
+            fontSize="14px"
+            fontWeight={600}
+            rightIcon={<Icon as={customOpen ? LuChevronUp : LuChevronDown} boxSize={4} />}
+            onClick={() => setCustomOpen(!customOpen)}
+          >
+            Custom keyframes
+          </Button>
+          {customOpen && (
+            <Box mt={2}>
+              <CustomTab targetId={primaryId} />
+            </Box>
+          )}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+export default function AnimatePanel() {
+  const selectedIds = useEditorStore((s) => s.selectedIds);
 
   if (selectedIds.length === 0) {
     return (
@@ -444,65 +702,10 @@ export default function AnimatePanel() {
     );
   }
 
-  if (!primaryId) return null;
-
-  const onApply = (effectId: string) => {
-    if (multi) applyEffectToSelection(effectId);
-    else applyEffect(primaryId, effectId);
-  };
-
-  const appliedClips = Object.values(clips).filter((c) => c.targetId === primaryId && c.kind === tab);
-
+  // keyed so the open card / add flow reset when the selection changes
   return (
     <Flex direction="column" height="100%">
-      <Grid templateColumns={`repeat(${tabs.length}, 1fr)`} borderBottomWidth="1px" borderColor="gray.200" px={4}>
-        {tabs.map((t) => (
-          <Button
-            key={t.id}
-            variant="unstyled"
-            height="40px"
-            borderRadius={0}
-            fontSize="13px"
-            fontWeight={600}
-            color={tab === t.id ? 'mcBlue.600' : 'gray.500'}
-            borderBottomWidth="2px"
-            borderBottomColor={tab === t.id ? 'mcBlue.500' : 'transparent'}
-            onClick={() => setTab(t.id)}
-          >
-            {t.label}
-          </Button>
-        ))}
-      </Grid>
-
-      {multi && tab !== 'CUSTOM' && (
-        <Box px={4} pt={3}>
-          <Text fontSize="12px" color="mcBlue.600" fontWeight={600}>
-            Applying to {selectedIds.length} selected layers/groups.
-          </Text>
-        </Box>
-      )}
-
-      <Box flex={1} overflowY="auto" px={4} py={4}>
-        {tab === 'CUSTOM' ? (
-          <CustomTab targetId={primaryId} />
-        ) : (
-          <VStack align="stretch" spacing={4}>
-            {!multi && appliedClips.length > 0 && (
-              <Box>
-                <Text fontSize="11px" fontWeight={700} textTransform="uppercase" color="gray.500" mb={2}>
-                  Applied
-                </Text>
-                <VStack align="stretch" spacing={2}>
-                  {appliedClips.map((c) => (
-                    <AppliedClipCard key={c.id} clip={c} canCustom={p3c} canExtended={p3b} />
-                  ))}
-                </VStack>
-              </Box>
-            )}
-            <EffectGallery kind={tab} p3b={p3b} onApply={onApply} />
-          </VStack>
-        )}
-      </Box>
+      <AnimateBody key={selectedIds.join('|')} selectedIds={selectedIds} />
     </Flex>
   );
 }

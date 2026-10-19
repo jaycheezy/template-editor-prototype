@@ -10,12 +10,36 @@ import {
   MenuButton,
   MenuItem,
   MenuList,
+  Portal,
   Tag,
   Text,
 } from '@chakra-ui/react';
 import { IoTrophyOutline, IoCalendarClearOutline } from 'react-icons/io5';
-import { LuFolderPlus, LuImage, LuPlus, LuType, LuX } from 'react-icons/lu';
+import {
+  LuChevronRight,
+  LuCircle,
+  LuFolderPlus,
+  LuImage,
+  LuLink,
+  LuPlus,
+  LuShirt,
+  LuSquare,
+  LuTriangle,
+  LuType,
+  LuX,
+} from 'react-icons/lu';
 import { PiBoundingBox } from 'react-icons/pi';
+import type { IconType } from 'react-icons';
+import { useState } from 'react';
+import type { VectorShape } from '../../types';
+import { VECTOR_SHAPES } from '../../lib/factory';
+import {
+  startCustomImage,
+  startStaticImage,
+  startTeamAsset,
+  startText,
+  startVector,
+} from '../../lib/addTools';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import LayerTree from './LayerTree';
@@ -28,9 +52,100 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
+const SHAPE_ICONS: Record<VectorShape, IconType> = {
+  rectangle: LuSquare,
+  ellipse: LuCircle,
+  triangle: LuTriangle,
+};
+
+interface SubmenuItem {
+  key: string;
+  label: string;
+  icon: IconType;
+  /** keyboard shortcut hint */
+  command?: string;
+  onPick: () => void;
+}
+
+/** Menu entry that opens a flyout of choices on hover (or click / right arrow). */
+function Submenu({ label, icon, items }: { label: string; icon: IconType; items: SubmenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Box
+      position="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <MenuItem
+        icon={<Icon as={icon} />}
+        fontSize="13px"
+        closeOnSelect={false}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            setOpen(true);
+          }
+        }}
+      >
+        <Flex align="center" justify="space-between">
+          {label}
+          <Icon as={LuChevronRight} boxSize={3.5} color="gray.500" />
+        </Flex>
+      </MenuItem>
+      {open && (
+        <Box
+          position="absolute"
+          left="100%"
+          top="-5px"
+          ml="-2px"
+          minW="180px"
+          bg="white"
+          borderWidth="1px"
+          borderColor="gray.200"
+          borderRadius="md"
+          boxShadow="lg"
+          py={2}
+          zIndex={2}
+          role="menu"
+        >
+          {items.map((item) => (
+            <MenuItem
+              key={item.key}
+              icon={<Icon as={item.icon} />}
+              command={item.command}
+              fontSize="13px"
+              onClick={item.onPick}
+            >
+              {item.label}
+            </MenuItem>
+          ))}
+        </Box>
+      )}
+    </Box>
+  );
+}
+
+const IMAGE_ITEMS: SubmenuItem[] = [
+  { key: 'static', label: 'Static image', icon: LuImage, command: 'I', onPick: () => void startStaticImage() },
+  { key: 'team', label: 'Team asset', icon: LuShirt, onPick: startTeamAsset },
+  { key: 'custom', label: 'Custom URL', icon: LuLink, onPick: startCustomImage },
+];
+
+const VECTOR_COMMANDS: Partial<Record<VectorShape, string>> = { rectangle: 'R', ellipse: 'O' };
+
+const VECTOR_ITEMS: SubmenuItem[] = VECTOR_SHAPES.map(({ shape, label }) => ({
+  key: shape,
+  label,
+  icon: SHAPE_ICONS[shape],
+  command: VECTOR_COMMANDS[shape],
+  onPick: () => startVector(shape),
+}));
+
 export default function LeftSidebar() {
   const dataSources = useEditorStore((s) => s.dataSources);
-  const addElement = useEditorStore((s) => s.addElement);
   const groupSelection = useEditorStore((s) => s.groupSelection);
   const selectedIds = useEditorStore((s) => s.selectedIds);
   const enteredGroupId = useEditorStore((s) => s.enteredGroupId);
@@ -76,17 +191,15 @@ export default function LeftSidebar() {
                   variant="ghost"
                   color="gray.600"
                 />
-                <MenuList minW="150px">
-                  <MenuItem icon={<Icon as={LuType} />} fontSize="13px" onClick={() => addElement('TEXT')}>
-                    Text
-                  </MenuItem>
-                  <MenuItem icon={<Icon as={LuImage} />} fontSize="13px" onClick={() => addElement('IMAGE')}>
-                    Image
-                  </MenuItem>
-                  <MenuItem icon={<Icon as={PiBoundingBox} />} fontSize="13px" onClick={() => addElement('VECTOR')}>
-                    Vector
-                  </MenuItem>
-                </MenuList>
+                <Portal>
+                  <MenuList minW="170px">
+                    <MenuItem icon={<Icon as={LuType} />} command="T" fontSize="13px" onClick={startText}>
+                      Text
+                    </MenuItem>
+                    <Submenu label="Image" icon={LuImage} items={IMAGE_ITEMS} />
+                    <Submenu label="Vector" icon={PiBoundingBox} items={VECTOR_ITEMS} />
+                  </MenuList>
+                </Portal>
               </Menu>
             )}
           </HStack>

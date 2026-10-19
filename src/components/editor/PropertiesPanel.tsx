@@ -4,6 +4,7 @@ import {
   ButtonGroup,
   Flex,
   FormLabel,
+  Grid,
   HStack,
   Icon,
   Input,
@@ -13,7 +14,15 @@ import {
   Textarea,
   VStack,
 } from '@chakra-ui/react';
-import { LuAlignCenter, LuAlignLeft, LuAlignRight, LuInfo } from 'react-icons/lu';
+import {
+  LuAlignCenter,
+  LuAlignLeft,
+  LuAlignRight,
+  LuArrowDownToLine,
+  LuArrowUpToLine,
+  LuFoldVertical,
+  LuInfo,
+} from 'react-icons/lu';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import type { AdElement, ImageElement, TextElement, VectorElement } from '../../types';
@@ -140,6 +149,36 @@ function PositionSizeFields({
   );
 }
 
+function SegmentedIcons<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; icon: React.ElementType; label: string }[];
+}) {
+  return (
+    <ButtonGroup isAttached size="sm" variant="outline" display="flex">
+      {options.map((o) => (
+        <Button
+          key={o.value}
+          aria-label={o.label}
+          aria-pressed={value === o.value}
+          title={o.label}
+          onClick={() => onChange(o.value)}
+          bg={value === o.value ? 'mcBlue.50' : 'white'}
+          borderColor={value === o.value ? 'mcBlue.300' : 'gray.200'}
+          color={value === o.value ? 'mcBlue.600' : 'gray.600'}
+          px={2}
+        >
+          <Icon as={o.icon} />
+        </Button>
+      ))}
+    </ButtonGroup>
+  );
+}
+
 function TextControls({
   el,
   canMove,
@@ -150,6 +189,9 @@ function TextControls({
   canAuthor: boolean;
 }) {
   const update = useEditorStore((s) => s.updateTextElement);
+  const updateElement = useEditorStore((s) => s.updateElement);
+  const resizeElement = useEditorStore((s) => s.resizeElement);
+  const showLayout = canAuthor || canMove;
 
   return (
     <VStack align="stretch" spacing={6}>
@@ -183,25 +225,18 @@ function TextControls({
         <Text fontSize="17px" fontWeight={700} mb={3}>
           Typography
         </Text>
-        <HStack align="flex-end" spacing={5}>
+        <Grid templateColumns="94px minmax(0, 1fr) minmax(0, 1fr)" columnGap={4} rowGap={4} alignItems="start">
           <Box>
             <FieldLabel>Align</FieldLabel>
-            <ButtonGroup isAttached size="sm" variant="outline">
-              {([['left', LuAlignLeft], ['center', LuAlignCenter], ['right', LuAlignRight]] as const).map(
-                ([a, IconC]) => (
-                  <Button
-                    key={a}
-                    onClick={() => update(el.id, { align: a })}
-                    bg={el.align === a ? 'mcBlue.50' : 'white'}
-                    borderColor={el.align === a ? 'mcBlue.300' : 'gray.200'}
-                    color={el.align === a ? 'mcBlue.600' : 'gray.600'}
-                    px={2}
-                  >
-                    <Icon as={IconC} />
-                  </Button>
-                ),
-              )}
-            </ButtonGroup>
+            <SegmentedIcons
+              value={el.align}
+              onChange={(a) => update(el.id, { align: a })}
+              options={[
+                { value: 'left', icon: LuAlignLeft, label: 'Align left' },
+                { value: 'center', icon: LuAlignCenter, label: 'Align center' },
+                { value: 'right', icon: LuAlignRight, label: 'Align right' },
+              ]}
+            />
           </Box>
           <NumberField label="Font size" value={el.fontSize} onChange={(v) => update(el.id, { fontSize: v })} />
           <NumberField
@@ -209,24 +244,51 @@ function TextControls({
             value={el.lineHeight * 10}
             onChange={(v) => update(el.id, { lineHeight: v / 10 })}
           />
-        </HStack>
-      </Box>
 
-      {(canAuthor || canMove) && (
-        <Box>
-          <Text fontSize="17px" fontWeight={700} mb={3}>
-            Color &amp; layout
-          </Text>
-          {canAuthor && (
-            <ColorField label="Text color" value={el.color} onChange={(v) => update(el.id, { color: v })} />
-          )}
-          {(canMove || canAuthor) && (
-            <Box mt={canAuthor ? 4 : 0}>
-              <PositionSizeFields el={el} canMove={canMove} canResize={canAuthor} />
-            </Box>
-          )}
-        </Box>
-      )}
+          <Box>
+            <FieldLabel>Vertical Align</FieldLabel>
+            <SegmentedIcons
+              value={el.verticalAlign ?? 'middle'}
+              onChange={(v) => update(el.id, { verticalAlign: v })}
+              options={[
+                { value: 'top', icon: LuArrowUpToLine, label: 'Align top' },
+                { value: 'middle', icon: LuFoldVertical, label: 'Align middle' },
+                { value: 'bottom', icon: LuArrowDownToLine, label: 'Align bottom' },
+              ]}
+            />
+          </Box>
+          {showLayout ? (
+            <>
+              <NumberField
+                label="X position"
+                value={el.position.x}
+                isDisabled={!canMove}
+                onChange={(v) => updateElement(el.id, { position: { ...el.position, x: v } })}
+              />
+              <NumberField
+                label="Y position"
+                value={el.position.y}
+                isDisabled={!canMove}
+                onChange={(v) => updateElement(el.id, { position: { ...el.position, y: v } })}
+              />
+              <Box gridColumnStart={2}>
+                <NumberField
+                  label="Width"
+                  value={el.size.width}
+                  isDisabled={!canAuthor}
+                  onChange={(v) => resizeElement(el.id, { width: v, height: el.size.height })}
+                />
+              </Box>
+              <NumberField
+                label="Height"
+                value={el.size.height}
+                isDisabled={!canAuthor}
+                onChange={(v) => resizeElement(el.id, { width: el.size.width, height: v })}
+              />
+            </>
+          ) : null}
+        </Grid>
+      </Box>
 
       <Box>
         <Text fontSize="17px" fontWeight={700} mb={2}>
@@ -247,6 +309,11 @@ function TextControls({
           <option value={600}>Semibold</option>
           <option value={400}>Regular</option>
         </Select>
+        {canAuthor && (
+          <Box mt={4}>
+            <ColorField label="Text color" value={el.color} onChange={(v) => update(el.id, { color: v })} />
+          </Box>
+        )}
       </Box>
 
       <Box>

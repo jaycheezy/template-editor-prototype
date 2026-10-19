@@ -24,8 +24,9 @@ import {
   type Pan,
 } from '../../lib/viewport';
 import { CANVAS } from '../../data/mockTemplate';
-import type { AdElement } from '../../types';
+import type { AdElement, TextElement, TextVerticalAlign } from '../../types';
 import ImageContent from './ImageContent';
+import PlacementLayer from './PlacementLayer';
 
 const SELECTION_STROKE = '1.5px solid rgb(0, 92, 255)';
 const SELECTION_FILL = 'rgba(51, 68, 238, 0.10)';
@@ -36,13 +37,92 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
 }
 
+const V_ALIGN_ITEMS: Record<TextVerticalAlign, string> = {
+  top: 'flex-start',
+  middle: 'center',
+  bottom: 'flex-end',
+};
+
 type Corner = 'nw' | 'ne' | 'sw' | 'se';
+
+/** Types straight into a text layer on the canvas (new text boxes, or double-click on existing text). */
+function InlineTextEditor({ element }: { element: TextElement }) {
+  const updateText = useEditorStore((s) => s.updateTextElement);
+  const stopEditing = useEditorStore((s) => s.stopEditingText);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }, []);
+
+  return (
+    <div
+      onPointerDown={(e) => {
+        e.stopPropagation();
+        // clicking the empty part of the box keeps the caret in the field
+        if (e.target !== inputRef.current) {
+          e.preventDefault();
+          inputRef.current?.focus();
+        }
+      }}
+      style={{
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        alignItems: V_ALIGN_ITEMS[element.verticalAlign ?? 'middle'],
+        background: element.boxColor ?? 'transparent',
+        borderRadius: element.boxRadius ?? 0,
+        padding: element.boxColor ? '0 4px' : 0,
+        boxSizing: 'border-box',
+      }}
+    >
+      <input
+        ref={inputRef}
+        value={element.content}
+        spellCheck={false}
+        onChange={(e) => updateText(element.id, { content: e.target.value })}
+        onBlur={stopEditing}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter' || e.key === 'Escape') {
+            e.preventDefault();
+            stopEditing();
+          }
+        }}
+        onDoubleClick={(e) => e.stopPropagation()}
+        style={{
+          width: '100%',
+          height: Math.max(1, Math.round(element.fontSize * element.lineHeight)),
+          maxHeight: '100%',
+          border: 'none',
+          outline: 'none',
+          margin: 0,
+          padding: 0,
+          background: 'transparent',
+          boxSizing: 'border-box',
+          color: element.color,
+          caretColor: element.color,
+          fontSize: element.fontSize,
+          fontWeight: element.fontWeight,
+          lineHeight: element.lineHeight,
+          letterSpacing: element.letterSpacing ?? 0,
+          fontFamily: `'${element.fontFamily}', sans-serif`,
+          textAlign: element.align,
+        }}
+      />
+    </div>
+  );
+}
 
 function ElementView({
   rendered,
   selected,
   canMove,
   inert,
+  editing,
   cursor,
   onPointerDown,
   onDoubleClick,
@@ -51,6 +131,7 @@ function ElementView({
   selected: boolean;
   canMove: boolean;
   inert?: boolean;
+  editing?: boolean;
   cursor?: string;
   onPointerDown: (e: React.PointerEvent, el: AdElement) => void;
   onDoubleClick: (e: React.MouseEvent, el: AdElement) => void;
@@ -71,14 +152,16 @@ function ElementView({
   };
 
   let content: React.ReactNode;
-  if (element.type === 'TEXT') {
+  if (element.type === 'TEXT' && editing) {
+    content = <InlineTextEditor element={element} />;
+  } else if (element.type === 'TEXT') {
     content = (
       <div
         style={{
           width: '100%',
           height: '100%',
           display: 'flex',
-          alignItems: 'center',
+          alignItems: V_ALIGN_ITEMS[element.verticalAlign ?? 'middle'],
           justifyContent:
             element.align === 'left' ? 'flex-start' : element.align === 'right' ? 'flex-end' : 'center',
           color: element.color,
@@ -122,7 +205,7 @@ function ElementView({
             position: 'absolute',
             inset: -2,
             border: SELECTION_STROKE,
-            background: SELECTION_FILL,
+            background: editing ? 'transparent' : SELECTION_FILL,
             pointerEvents: 'none',
           }}
         />
@@ -249,12 +332,17 @@ export default function Canvas() {
   const resizeElement = useEditorStore((s) => s.resizeElement);
   const enterGroup = useEditorStore((s) => s.enterGroup);
   const exitGroup = useEditorStore((s) => s.exitGroup);
+  const placementTool = useEditorStore((s) => s.placementTool);
+  const editingText = useEditorStore((s) => s.editingText);
+  const startEditingText = useEditorStore((s) => s.startEditingText);
 
   const canLayout = usePhase('layout');
   const canAuthor = usePhase('author');
   const canGroup = usePhase('groups');
 
   const viewportRef = useRef<HTMLDivElement>(null);
+  /** the 300x250 artboard, used to turn pointer positions into scene coordinates */
+  const artboardRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(LEGACY_SCALE);
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -474,6 +562,15 @@ export default function Canvas() {
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent, el: AdElement) => {
       e.stopPropagation();
+      if (canAuthor && el.type === 'TEXT' && !isEffectivelyLocked(el, groups)) {
+        const target = hitTargetId(el);
+        // double-clicking text inside a group enters the group first (below); once in scope it edits
+        if (target === el.id) {
+          select(el.id);
+          startEditingText(el.id);
+          return;
+        }
+      }
       if (!canGroup) return;
       const hitId = hitTargetId(el);
       if (!groups[hitId]) return;
@@ -481,7 +578,7 @@ export default function Canvas() {
       enterGroup(hitId);
       select(innerId);
     },
-    [canGroup, elements, enterGroup, groups, hitTargetId, select],
+    [canAuthor, canGroup, elements, enterGroup, groups, hitTargetId, select, startEditingText],
   );
 
   const handleGroupBoxPointerDown = useCallback(
@@ -586,6 +683,7 @@ export default function Canvas() {
           canMove={canLayout && !spaceHeld}
           cursor={spaceHeld || panning ? (panning ? 'grabbing' : 'grab') : undefined}
           inert={canGroup && !isInEnteredScope(r.element.id, enteredGroupId, groups, elements)}
+          editing={editingText != null && editingText.id === r.element.id}
           onPointerDown={handlePointerDown}
           onDoubleClick={handleDoubleClick}
         />
@@ -633,6 +731,7 @@ export default function Canvas() {
         align="center"
         justify="center"
         overflow="hidden"
+        position="relative"
         onPointerDown={() => select(null)}
         onDoubleClick={() => canGroup && exitGroup()}
       >
@@ -646,6 +745,7 @@ export default function Canvas() {
           }}
         >
           <Box
+            ref={artboardRef}
             position="absolute"
             top={0}
             left={0}
@@ -660,6 +760,7 @@ export default function Canvas() {
             {scene}
           </Box>
         </Box>
+        {canAuthor && placementTool && <PlacementLayer tool={placementTool} artboardRef={artboardRef} />}
       </Flex>
     );
   }
@@ -693,6 +794,7 @@ export default function Canvas() {
         }}
       >
         <Box
+          ref={artboardRef}
           position="relative"
           width={`${CANVAS.width}px`}
           height={`${CANVAS.height}px`}
@@ -707,6 +809,7 @@ export default function Canvas() {
           {scene}
         </Box>
       </Box>
+      {canAuthor && placementTool && <PlacementLayer tool={placementTool} artboardRef={artboardRef} />}
       <ZoomHud
         zoom={zoom}
         onZoomIn={() => zoomTowardCenter(zoom + ZOOM_STEP)}

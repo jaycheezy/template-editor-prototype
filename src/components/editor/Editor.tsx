@@ -8,6 +8,7 @@ import RightSidebar from './RightSidebar';
 import Canvas from '../canvas/Canvas';
 import Timeline from '../timeline/Timeline';
 import PreviewControls from '../timeline/PreviewControls';
+import EditorShortcuts from './EditorShortcuts';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
 import { usePlaybackLoop } from '../../lib/usePlayback';
@@ -76,6 +77,7 @@ export default function Editor() {
   return (
     <Flex direction="column" height="100vh" overflow="hidden">
       <GroupShortcuts />
+      <EditorShortcuts />
       <HostBar />
       <Topbar />
       <Flex flex={1} overflow="hidden">

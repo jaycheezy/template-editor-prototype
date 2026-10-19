@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import Editor from './components/editor/Editor';
 import { flagsFromSearch } from './lib/phases';
 import { useFeatureStore } from './store/featureStore';
+
+const AdTagOptions = lazy(() => import('./components/ad-tags/AdTagOptions'));
 
 export default function App() {
   useEffect(() => {
@@ -13,6 +15,10 @@ export default function App() {
     window.addEventListener('popstate', applyFromUrl);
     return () => window.removeEventListener('popstate', applyFromUrl);
   }, []);
+
+  if (new URLSearchParams(window.location.search).get('view') === 'ad-tag-options') {
+    return <Suspense fallback={<div style={{ padding: 32 }}>Loading creative strategies…</div>}><AdTagOptions /></Suspense>;
+  }
 
   return <Editor />;
 }

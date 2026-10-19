@@ -10,6 +10,7 @@ import type {
   ImageSourceDrafts,
   ImageSourceKind,
   Keyframe,
+  PlacementTool,
   StaticImageSource,
   TeamImageSource,
   TextElement,
@@ -17,7 +18,6 @@ import type {
 import { sourceForKind } from '../lib/imageSource';
 import {
   buildInitialAnimation,
-  CANVAS,
   mockDataSources,
   mockElements,
   mockGroups,
@@ -41,8 +41,12 @@ import {
   reassignGlobalZ,
   type LayerDropTarget,
 } from '../lib/layers';
-import { isInEnteredScope, resolveSelection, type SelectOptions } from '../lib/selection';
-import { createElement, type NewElementType } from '../lib/factory';
+import {
+  expandSelectionToElementIds,
+  isInEnteredScope,
+  resolveSelection,
+  type SelectOptions,
+} from '../lib/selection';
 
 export type ImageSourcePatch = Partial<
   Omit<StaticImageSource, 'kind'> & Omit<TeamImageSource, 'kind'> & Omit<CustomImageSource, 'kind'>
@@ -79,6 +83,10 @@ interface EditorState {
   rightMode: RightMode;
   /** group the user has "entered" for nested editing (Phase 2), null = root scope */
   enteredGroupId: string | null;
+  /** Add-menu tool waiting for a click / drag on the canvas, null = normal select mode. */
+  placementTool: PlacementTool | null;
+  /** Text layer being typed into on the canvas. isNew: delete it again if left empty. */
+  editingText: { id: string; isNew: boolean } | null;
 
   // playback
   currentTime: number;
@@ -101,8 +109,14 @@ interface EditorState {
   moveSelectionBy: (ids: string[], dx: number, dy: number) => void;
   resizeElement: (id: string, size: { width: number; height: number }, position?: { x: number; y: number }) => void;
   deleteElement: (id: string) => void;
+  /** Delete every selected layer / group (locked ones are skipped). */
+  deleteSelection: () => void;
   moveElementLayer: (nodeId: string, target: LayerDropTarget, options?: { flat?: boolean }) => string | null;
-  addElement: (type: NewElementType) => void;
+  /** Insert a ready-made element on top (inside the entered group, if any) and select it. */
+  placeElement: (el: AdElement, options?: { editText?: boolean }) => void;
+  setPlacementTool: (tool: PlacementTool | null) => void;
+  startEditingText: (id: string) => void;
+  stopEditingText: () => void;
   renameElement: (id: string, name: string) => void;
   toggleElementHidden: (id: string) => void;
   toggleElementLocked: (id: string) => void;
@@ -179,6 +193,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   selectionAnchorId: 'el.competition',
   rightMode: 'properties',
   enteredGroupId: null,
+  placementTool: null,
+  editingText: null,
 
   currentTime: 1500,
   isPlaying: false,
@@ -290,20 +306,21 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       }),
     })),
 
-  addElement: (type) =>
+  placeElement: (placed, options) =>
     set((s) => {
       const maxZ = s.elements.reduce((m, e) => Math.max(m, e.position.z), 0);
       const parentId = s.enteredGroupId;
-      const el = { ...createElement(type, CANVAS.width / 2, CANVAS.height / 2, maxZ + 1), parentId };
+      // layer lists are front-first, so a new layer goes to the front of its list (top of the stack)
+      const el = { ...placed, parentId, position: { ...placed.position, z: maxZ + 1 } } as AdElement;
       let nextGroups = s.groups;
       let nextRoot = s.rootOrder;
       if (parentId && nextGroups[parentId]) {
         nextGroups = {
           ...nextGroups,
-          [parentId]: { ...nextGroups[parentId], children: [...nextGroups[parentId].children, el.id] },
+          [parentId]: { ...nextGroups[parentId], children: [el.id, ...nextGroups[parentId].children] },
         };
       } else {
-        nextRoot = [...nextRoot, el.id];
+        nextRoot = [el.id, ...nextRoot];
       }
       const elements = reassignGlobalZ([...s.elements, el], nextGroups, nextRoot);
       return {
@@ -313,8 +330,25 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         selectedIds: [el.id],
         selectionAnchorId: el.id,
         rightMode: 'properties',
+        placementTool: null,
+        editingText: options && options.editText ? { id: el.id, isNew: true } : null,
       };
     }),
+
+  setPlacementTool: (placementTool) => set({ placementTool, editingText: null }),
+
+  startEditingText: (id) => set({ editingText: { id, isNew: false }, placementTool: null }),
+
+  stopEditingText: () => {
+    const { editingText, elements, deleteElement } = get();
+    if (!editingText) return;
+    set({ editingText: null });
+    const el = elements.find((e) => e.id === editingText.id);
+    // like Figma: a text box you created and left empty is discarded
+    if (editingText.isNew && el && el.type === 'TEXT' && el.content.trim() === '') {
+      deleteElement(editingText.id);
+    }
+  },
 
   renameElement: (id, name) =>
     set((s) => ({
@@ -403,6 +437,61 @@ export const useEditorStore = create<EditorState>((set, get) => ({
         animation: { ...s.animation, tracks: nextTracks, clips: nextClips },
         selectedIds: s.selectedIds.filter((sid) => sid !== id),
         selectionAnchorId: s.selectionAnchorId === id ? null : s.selectionAnchorId,
+      };
+    }),
+
+  deleteSelection: () =>
+    set((s) => {
+      const selected = expandSelectionToElementIds(s.selectedIds, s.groups);
+      const deleted = new Set(
+        s.elements.filter((e) => selected.has(e.id) && !isEffectivelyLocked(e, s.groups)).map((e) => e.id),
+      );
+      if (deleted.size === 0) return {};
+
+      const nextElements = s.elements.filter((e) => !deleted.has(e.id));
+      const remaining = new Set(nextElements.map((e) => e.id));
+
+      // a group goes away once it has no layers left (directly or nested)
+      const hasLayers = (gid: string, seen: Set<string> = new Set()): boolean => {
+        if (seen.has(gid)) return false;
+        seen.add(gid);
+        const group = s.groups[gid];
+        if (!group) return false;
+        return group.children.some((cid) => (s.groups[cid] ? hasLayers(cid, seen) : remaining.has(cid)));
+      };
+      const removedGroups = new Set(Object.keys(s.groups).filter((gid) => !hasLayers(gid)));
+      const gone = (id: string) => deleted.has(id) || removedGroups.has(id);
+
+      const nextGroups: Record<string, Group> = {};
+      Object.entries(s.groups).forEach(([gid, g]) => {
+        if (removedGroups.has(gid)) return;
+        nextGroups[gid] = { ...g, children: g.children.filter((cid) => !gone(cid)) };
+      });
+
+      const nextTracks = { ...s.animation.tracks };
+      const nextClips = { ...s.animation.clips };
+      Object.values(nextClips).forEach((clip) => {
+        if (!gone(clip.targetId)) return;
+        clip.trackIds.forEach((tid) => delete nextTracks[tid]);
+        delete nextClips[clip.id];
+      });
+      Object.keys(nextTracks).forEach((tid) => {
+        if (gone(nextTracks[tid].targetId)) delete nextTracks[tid];
+      });
+
+      // if the group being edited disappeared, step out to the nearest group that's left
+      let entered = s.enteredGroupId;
+      while (entered && removedGroups.has(entered)) entered = s.groups[entered]?.parentId ?? null;
+
+      return {
+        elements: nextElements,
+        groups: nextGroups,
+        rootOrder: s.rootOrder.filter((id) => !gone(id)),
+        animation: { ...s.animation, tracks: nextTracks, clips: nextClips },
+        selectedIds: [],
+        selectionAnchorId: null,
+        enteredGroupId: entered,
+        editingText: null,
       };
     }),
 

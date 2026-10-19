@@ -1,73 +1,129 @@
-import type { AdElement } from '../types';
+import type { ImageElement, TextElement, VectorElement, VectorShape } from '../types';
 import { uid } from './clips';
 
-export type NewElementType = 'TEXT' | 'IMAGE' | 'VECTOR';
+export const VECTOR_SHAPES: { shape: VectorShape; label: string }[] = [
+  { shape: 'rectangle', label: 'Rectangle' },
+  { shape: 'ellipse', label: 'Ellipse' },
+  { shape: 'triangle', label: 'Triangle' },
+];
 
-const PLACEHOLDER_VECTOR = (fill: string) =>
-  `<svg viewBox="0 0 100 60" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
-  <rect width="100" height="60" rx="6" fill="${fill}"/>
-</svg>`;
+const DEFAULT_FILL = '#3367D6';
+/** Size of a shape created by a plain click (no drag). */
+const CLICK_SHAPE_SIZE = 80;
+/** A drag smaller than this (in scene px) counts as a click. */
+export const DRAG_THRESHOLD = 4;
+const MIN_SIZE = 8;
+/** Longest side of an uploaded image when it is first placed. */
+export const MAX_PLACED_IMAGE_SIDE = 120;
 
-/** Create a fresh element of the given type, centred at (x, y) with a sensible default size. */
-export function createElement(
-  type: NewElementType,
-  x: number,
-  y: number,
-  z: number,
-): AdElement {
-  const id = uid(`el.${type.toLowerCase()}`);
-  const base = {
-    id,
-    name: `New ${type.charAt(0) + type.slice(1).toLowerCase()}`,
-    parentId: null as string | null,
-    rotation: 0,
-  };
+export function shapeSvg(shape: VectorShape, fill: string): string {
+  const body =
+    shape === 'ellipse'
+      ? `<ellipse cx="50" cy="50" rx="50" ry="50" fill="${fill}"/>`
+      : shape === 'triangle'
+        ? `<polygon points="50,0 100,100 0,100" fill="${fill}"/>`
+        : `<rect width="100" height="100" fill="${fill}"/>`;
+  // preserveAspectRatio="none" so the shape follows the box when it is resized
+  return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">${body}</svg>`;
+}
 
-  if (type === 'TEXT') {
-    const width = 120;
-    const height = 24;
-    return {
-      ...base,
-      type: 'TEXT',
-      position: { x: Math.round(x - width / 2), y: Math.round(y - height / 2), z },
-      size: { width, height },
-      content: 'New text',
-      color: '#ffffff',
-      fontSize: 16,
-      fontWeight: 700,
-      lineHeight: 1.1,
-      align: 'center',
-      textCase: 'none',
-      fontFamily: 'Source Sans 3',
-    };
-  }
+const label = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-  if (type === 'IMAGE') {
-    const size = 80;
-    return {
-      ...base,
-      type: 'IMAGE',
-      position: { x: Math.round(x - size / 2), y: Math.round(y - size / 2), z },
-      size: { width: size, height: size },
-      source: { kind: 'unset' },
-    };
-  }
-
-  const width = 100;
-  const height = 60;
-  const fill = '#3367D6';
+/** An empty text box whose left edge sits at the clicked point, vertically centred on it. */
+export function createText(x: number, y: number, z: number): TextElement {
+  const width = 120;
+  const height = 24;
   return {
-    ...base,
-    type: 'VECTOR',
-    position: { x: Math.round(x - width / 2), y: Math.round(y - height / 2), z },
+    id: uid('el.text'),
+    name: 'New Text',
+    type: 'TEXT',
+    parentId: null,
+    rotation: 0,
+    position: { x: Math.round(x), y: Math.round(y - height / 2), z },
     size: { width, height },
-    svg: PLACEHOLDER_VECTOR(fill),
-    fill,
+    content: '',
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 700,
+    lineHeight: 1.1,
+    align: 'left',
+    verticalAlign: 'top',
+    textCase: 'none',
+    fontFamily: 'Source Sans 3',
   };
 }
 
-export function vectorSvg(width: number, height: number, fill: string): string {
-  return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">
-  <rect width="${width}" height="${height}" rx="6" fill="${fill}"/>
-</svg>`;
+const MIN_TEXT_WIDTH = 24;
+const MIN_TEXT_HEIGHT = 24;
+
+/**
+ * A text box sized by dragging from one corner to the opposite one.
+ * A plain click (no real drag) falls back to the default box anchored at the click.
+ */
+export function createTextBox(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  z: number,
+): TextElement {
+  const w = Math.abs(to.x - from.x);
+  const h = Math.abs(to.y - from.y);
+  if (w < DRAG_THRESHOLD && h < DRAG_THRESHOLD) return createText(from.x, from.y, z);
+  const el = createText(0, 0, z);
+  const width = Math.max(MIN_TEXT_WIDTH, w);
+  const height = Math.max(MIN_TEXT_HEIGHT, h);
+  return {
+    ...el,
+    position: { x: Math.round(Math.min(from.x, to.x)), y: Math.round(Math.min(from.y, to.y)), z },
+    size: { width: Math.round(width), height: Math.round(height) },
+  };
+}
+
+/** An image element centred on (cx, cy). */
+export function createImage(
+  cx: number,
+  cy: number,
+  z: number,
+  spec: Pick<ImageElement, 'name' | 'source'> & { width: number; height: number },
+): ImageElement {
+  return {
+    id: uid('el.image'),
+    name: spec.name,
+    type: 'IMAGE',
+    parentId: null,
+    rotation: 0,
+    position: { x: Math.round(cx - spec.width / 2), y: Math.round(cy - spec.height / 2), z },
+    size: { width: Math.round(spec.width), height: Math.round(spec.height) },
+    source: spec.source,
+  };
+}
+
+/**
+ * A shape covering the rectangle dragged between two scene points.
+ * A click (tiny drag) produces a default-sized shape anchored at the click.
+ */
+export function createVector(
+  shape: VectorShape,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  z: number,
+): VectorElement {
+  const w = Math.abs(to.x - from.x);
+  const h = Math.abs(to.y - from.y);
+  const isClick = w < DRAG_THRESHOLD && h < DRAG_THRESHOLD;
+  const width = isClick ? CLICK_SHAPE_SIZE : Math.max(MIN_SIZE, w);
+  const height = isClick ? CLICK_SHAPE_SIZE : Math.max(MIN_SIZE, h);
+  const x = isClick ? from.x : Math.min(from.x, to.x);
+  const y = isClick ? from.y : Math.min(from.y, to.y);
+  return {
+    id: uid('el.vector'),
+    name: label(shape),
+    type: 'VECTOR',
+    parentId: null,
+    rotation: 0,
+    position: { x: Math.round(x), y: Math.round(y), z },
+    size: { width: Math.round(width), height: Math.round(height) },
+    svg: shapeSvg(shape, DEFAULT_FILL),
+    fill: DEFAULT_FILL,
+    shape,
+  };
 }

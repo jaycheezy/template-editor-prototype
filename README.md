@@ -13,6 +13,16 @@ npm run dev
 
 Then open http://localhost:5173.
 
+## Sports Moments Ad Tag concepts
+
+Open `/?view=ad-tag-options` for three interactive alternatives to the current stage-template dropdowns:
+
+- `/?view=ad-tag-options&option=stages`: stage cards with baseline creatives and moment overrides.
+- `/?view=ad-tag-options&option=rules`: a rules table with conditions, template sets, lifetimes and enable switches.
+- `/?view=ad-tag-options&option=flow`: a visual match journey with selectable nodes and an inline property inspector.
+
+All three views edit the same sample strategy. Choose size-compatible template sets, edit team conditions and windows, add/remove moments, and use the match simulator to check goal expiry, final results and fallback behaviour. Rule order resolves overlapping moments; stage defaults cover the remaining time. The **Reuse strategy** dialog illustrates bindings to Ad Tags, social Catalogues and the Activation Workflow. **Save prototype** stores the draft in this browser only. The existing template editor remains at `/`.
+
 ## Preview features menu
 
 The **"Preview features"** menu in the top bar is aligned to the five Template Editor epics

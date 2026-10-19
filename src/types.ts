@@ -45,6 +45,8 @@ export interface AdElementBase {
   hidden?: boolean;
 }
 
+export type TextVerticalAlign = 'top' | 'middle' | 'bottom';
+
 export interface TextElement extends AdElementBase {
   type: 'TEXT';
   /** template string, may contain {TOKENS} */
@@ -54,6 +56,8 @@ export interface TextElement extends AdElementBase {
   fontWeight: number;
   lineHeight: number;
   align: 'left' | 'center' | 'right';
+  /** where the text sits inside its box; defaults to 'middle' when unset */
+  verticalAlign?: TextVerticalAlign;
   textCase: 'none' | 'upper' | 'lower' | 'title';
   fontFamily: string;
   /** optional boxed background (used by odds chips) */
@@ -121,10 +125,14 @@ export interface ImageElement extends AdElementBase {
   sourceDrafts?: ImageSourceDrafts;
 }
 
+export type VectorShape = 'rectangle' | 'ellipse' | 'triangle';
+
 export interface VectorElement extends AdElementBase {
   type: 'VECTOR';
   svg: string;
   fill: string;
+  /** set for shapes drawn in the editor; imported vectors don't have one */
+  shape?: VectorShape;
 }
 
 export interface SvgElement extends AdElementBase {
@@ -134,6 +142,15 @@ export interface SvgElement extends AdElementBase {
 }
 
 export type AdElement = TextElement | ImageElement | VectorElement | SvgElement;
+
+/**
+ * "Place on canvas" tools started from the Add menu. While one is active the
+ * canvas shows a tool cursor and the next click (or drag, for shapes) creates the element.
+ */
+export type PlacementTool =
+  | { kind: 'text' }
+  | { kind: 'image'; name: string; width: number; height: number; source: ImageSource }
+  | { kind: 'vector'; shape: VectorShape };
 
 /** Extension hierarchy node. */
 export interface GroupTransform {

@@ -1,5 +1,5 @@
 import { Box, Button, Flex, HStack, Icon, Text } from '@chakra-ui/react';
-import { LuFolder, LuLayers, LuSparkles, LuSlidersHorizontal, LuType } from 'react-icons/lu';
+import { LuFolder, LuLayers, LuType } from 'react-icons/lu';
 import type { IconType } from 'react-icons';
 import { useEditorStore } from '../../store/editorStore';
 import { usePhase } from '../../store/featureStore';
@@ -54,25 +54,36 @@ export default function RightSidebar() {
             </Text>
           </HStack>
           {canAnimate && (
-            <HStack px={6} spacing={2} pb={2}>
-              <Button
-                size="sm"
-                leftIcon={<Icon as={LuSlidersHorizontal} />}
-                variant={rightMode === 'properties' ? 'solid' : 'ghost'}
-                colorScheme="mcBlue"
-                onClick={() => setRightMode('properties')}
-              >
-                Properties
-              </Button>
-              <Button
-                size="sm"
-                leftIcon={<Icon as={LuSparkles} />}
-                variant={rightMode === 'animate' ? 'solid' : 'ghost'}
-                colorScheme="mcBlue"
-                onClick={() => setRightMode('animate')}
-              >
-                Animate
-              </Button>
+            <HStack px={6} spacing={3} pb={3}>
+              {(
+                [
+                  ['properties', 'Properties'],
+                  ['animate', 'Animate'],
+                ] as const
+              ).map(([mode, label]) => {
+                const active = rightMode === mode;
+                return (
+                  <Button
+                    key={mode}
+                    size="sm"
+                    variant="outline"
+                    bg="white"
+                    color="gray.800"
+                    fontWeight={400}
+                    fontSize="14px"
+                    px={4}
+                    borderRadius="4px"
+                    borderWidth={active ? '1.5px' : '1px'}
+                    borderColor={active ? 'mcBlue.500' : 'gray.200'}
+                    aria-pressed={active}
+                    _hover={{ bg: 'white', borderColor: active ? 'mcBlue.500' : 'gray.300' }}
+                    _active={{ bg: 'gray.50' }}
+                    onClick={() => setRightMode(mode)}
+                  >
+                    {label}
+                  </Button>
+                );
+              })}
             </HStack>
           )}
           <Box borderTopWidth="1px" borderColor="gray.100" flex={1} overflowY="auto">
